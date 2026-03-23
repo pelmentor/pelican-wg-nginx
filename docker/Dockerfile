@@ -65,7 +65,11 @@ RUN mkdir -p \
     && chown -R container:container \
     /home/container /var/lib/nginx /var/log/nginx \
     /tmp/nginx /tmp/php /tmp/run-nginx \
-    && chmod 777 /var/log/nginx
+    && chmod 777 /var/log/nginx \
+    # Redirect default nginx error log to our writable location.
+    # Nginx writes to /var/log/nginx/error.log BEFORE reading config,
+    # so we symlink it to prevent the startup "Permission denied" alert.
+    && ln -sf /home/container/logs/nginx-error.log /var/log/nginx/error.log
 
 # Конфиги: копируем И в /home/container (рабочие), И в /defaults (бэкап)
 COPY nginx.conf /defaults/nginx.conf
