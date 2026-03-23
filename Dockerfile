@@ -18,8 +18,8 @@
 # --- Stage 1: Build Go WebSocket server ---
 FROM golang:1.21-alpine AS ws-builder
 WORKDIR /build
-COPY app/ws/ .
-RUN go build -ldflags="-s -w" -o /ws-server .
+COPY app/ws/main.go app/ws/go.mod ./
+RUN go mod tidy && go build -ldflags="-s -w" -o /ws-server .
 
 # --- Stage 2: Runtime image ---
 FROM ubuntu:22.04
