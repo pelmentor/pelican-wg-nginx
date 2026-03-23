@@ -7,7 +7,7 @@
 Complete pivot from Pelican egg to standalone Docker container with built-in admin UI.
 
 ### Added
-- Admin web panel (port 8443): Dashboard, Console, Files, Settings
+- Admin web panel (port 9876): Dashboard, Console, Files, Settings
 - xterm.js terminal with SSE real-time log streaming
 - File manager (upload, download, edit, delete, mkdir)
 - Config editor for WG, Nginx, PHP with service controls
