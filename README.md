@@ -1,101 +1,101 @@
 # Pelican Egg: WireGuard + Nginx + PHP-FPM
 
-Кастомный egg для [Pelican Panel](https://pelican.dev) (форк Pterodactyl). Запускает контейнер с WireGuard VPN-клиентом и веб-сервером Nginx + PHP-FPM — идеально для хостинга интерактивной карты Minecraft (BlueMap, Dynmap, Squaremap и т.д.), данные которой пушатся по WG-туннелю с удалённого MC-сервера.
+Custom egg for [Pelican Panel](https://pelican.dev) (Pterodactyl fork). Runs a container with a WireGuard VPN client and an Nginx + PHP-FPM web server. Data can be delivered to the web server over a WG tunnel from a remote host.
 
-## Быстрый старт
+## Quick Start
 
-### 1. Подготовка Wings
+### 1. Configure Wings
 
-В файле `/etc/pelican/config.yml` на ноде добавь:
+Add to `/etc/pelican/config.yml` on the node:
 
 ```yaml
 docker:
   network:
-    # ... существующие настройки ...
+    # ... existing settings ...
   container_pid_limit: 512
   installer_limits:
     memory: 1024
     cpu: 100
   overhead:
     default:
-      # ... существующие настройки ...
+      # ... existing settings ...
   allowed_capabilities:
-    - NET_ADMIN          # ← WireGuard нужен для создания wg-интерфейса
+    - NET_ADMIN          # Required for WireGuard interface creation
   allowed_devices:
-    - /dev/net/tun       # ← устройство для VPN-туннелей
+    - /dev/net/tun       # TUN device for VPN tunnels
 ```
 
-После изменения перезапусти Wings:
+Then restart Wings:
 ```bash
 sudo systemctl restart wings
 ```
 
-### 2. Сборка Docker-образа
+### 2. Build Docker Image
 
 ```bash
 cd docker/
 docker build -t ghcr.io/pelmentor/pelican-wg-nginx:latest .
 ```
 
-Или используй готовый образ (если опубликован).
+Or use the pre-built image (if published via GitHub Actions).
 
-### 3. Импорт Egg в Pelican Panel
+### 3. Import Egg into Pelican Panel
 
-1. Перейди в **Admin → Nests**
-2. Нажми **Import Egg**
-3. Загрузи файл `egg-wg-nginx.json`
-4. Создай сервер на основе этого egg
+1. Go to **Admin → Nests**
+2. Click **Import Egg**
+3. Upload `egg-wg-nginx.json`
+4. Create a server using this egg
 
-### 4. Настройка переменных сервера
+### 4. Configure Server Variables
 
-При создании сервера в Pelican заполни:
+When creating a server in Pelican, fill in:
 
-| Переменная | Описание | Пример |
-|------------|----------|--------|
-| `WG_PRIVATE_KEY` | Приватный ключ WireGuard этого контейнера | `aAbBcC...=` |
-| `WG_ADDRESS` | IP-адрес контейнера в WG-сети | `10.0.0.2/24` |
-| `WG_PEER_PUBLIC_KEY` | Публичный ключ пира (MC-сервера) | `xXyYzZ...=` |
-| `WG_PEER_ENDPOINT` | Адрес и порт WG на стороне пира | `vds.example.com:51820` |
-| `WG_PEER_ALLOWED_IPS` | Разрешённые IP через туннель | `10.0.0.1/32` |
-| `WG_LISTEN_PORT` | Порт WireGuard (UDP) | `51820` |
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `WG_PRIVATE_KEY` | WireGuard private key for this container | `aAbBcC...=` |
+| `WG_ADDRESS` | Container IP in the WG network (CIDR) | `10.0.0.2/24` |
+| `WG_PEER_PUBLIC_KEY` | Public key of the remote WG peer | `xXyYzZ...=` |
+| `WG_PEER_ENDPOINT` | Peer address and port | `vds.example.com:51820` |
+| `WG_PEER_ALLOWED_IPS` | IPs allowed through the tunnel | `10.0.0.1/32` |
+| `WG_LISTEN_PORT` | WireGuard UDP port | `51820` |
 
-### 5. Загрузка файлов карты
+All WG variables are optional — leave them empty to run as a plain web server without VPN.
 
-Через Pelican File Manager загрузи файлы карты в папку `webroot/`.
+### 5. Upload Website Files
 
-Или настрой на MC-сервере автоматический пуш через WG-туннель:
+Upload your files to `webroot/` via Pelican File Manager.
+
+Or set up automatic delivery from the remote host over the WG tunnel:
 ```bash
-# Пример: rsync тайлов BlueMap каждые 5 минут
-*/5 * * * * rsync -avz /path/to/bluemap/web/ user@10.0.0.2:/home/container/webroot/
+# Example: rsync every 5 minutes
+*/5 * * * * rsync -avz /path/to/data/ user@10.0.0.2:/home/container/webroot/
 ```
 
-### 6. Настройка OPNsense (если применимо)
+### 6. OPNsense Setup (if applicable)
 
-Если Unraid-сервер стоит за OPNsense — нужно пробросить порты.
-Подробности в [OPNSENSE.md](OPNSENSE.md).
+If the server is behind OPNsense, port forwarding is required.
+See [OPNSENSE.md](OPNSENSE.md) for details.
 
-## Структура проекта
+## Project Structure
 
 ```
 .
-├── README.md              ← этот файл
-├── ARCHITECTURE.md        ← схема архитектуры, решения и prior art
-├── RESEARCH.md            ← анализ существующих решений (linuxserver, official nginx/php, pelican-eggs)
-├── CHANGELOG.md           ← история изменений
-├── OPNSENSE.md            ← настройка firewall и port forward на OPNsense
-├── WINGS-CONFIG.md        ← подробная настройка Wings config.yml
-├── egg-wg-nginx.json      ← egg для импорта в Pelican
+├── README.md              — this file
+├── ARCHITECTURE.md        — architecture, traffic flows, design decisions
+├── RESEARCH.md            — analysis of existing solutions (linuxserver, official nginx/php, pelican-eggs)
+├── CHANGELOG.md           — version history
+├── OPNSENSE.md            — OPNsense firewall and port forward setup
+├── WINGS-CONFIG.md        — Wings config.yml setup for NET_ADMIN and /dev/net/tun
+├── egg-wg-nginx.json      — egg for Pelican import
 └── docker/
-    ├── Dockerfile         ← сборка образа
-    ├── entrypoint.sh      ← скрипт запуска сервисов
-    ├── nginx.conf         ← шаблон конфига Nginx
-    └── php-fpm.conf       ← шаблон конфига PHP-FPM
+    ├── Dockerfile         — image build
+    ├── entrypoint.sh      — service startup script
+    ├── nginx.conf         — Nginx config template
+    └── php-fpm.conf       — PHP-FPM config template
 ```
 
-## Требования
+## Requirements
 
-- **Unraid OS** с Docker
-- **Pelican Panel** + Wings
-- **OPNsense** (или другой роутер) с настроенным port forward
-- NET_ADMIN capability и /dev/net/tun (см. [WINGS-CONFIG.md](WINGS-CONFIG.md))
-- Сгенерированные WireGuard ключи (см. `wg genkey | tee privatekey | wg pubkey > publickey`)
+- **Pelican Panel** + Wings with Docker
+- NET_ADMIN capability and /dev/net/tun (see [WINGS-CONFIG.md](WINGS-CONFIG.md))
+- WireGuard keys (generate with `wg genkey | tee privatekey | wg pubkey > publickey`)
