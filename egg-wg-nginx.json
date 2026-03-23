@@ -58,7 +58,7 @@
             "default_value": "",
             "user_viewable": true,
             "user_editable": true,
-            "rules": "nullable|integer|between:1024,65535",
+            "rules": "nullable|string",
             "sort": 3,
             "field_type": "text"
         },
