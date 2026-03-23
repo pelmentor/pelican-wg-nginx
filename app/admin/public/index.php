@@ -41,7 +41,7 @@ $router->get('/settings', [SettingsController::class, 'index']);
 $router->get('/api/stats', [DashboardController::class, 'stats']);
 
 // API — Console
-$router->get('/api/console/stream', [ConsoleController::class, 'stream']);
+$router->get('/api/console/poll', [ConsoleController::class, 'poll']);
 $router->post('/api/console/command', [ConsoleController::class, 'command']);
 
 // API — Files

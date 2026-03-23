@@ -1,22 +1,41 @@
 <?php
 
 class ConsoleController {
+    private const LOG_FILES = [
+        'nginx-error' => '/data/logs/nginx-error.log',
+        'php-fpm-error' => '/data/logs/php-fpm-error.log',
+        'nginx-access' => '/data/logs/nginx-access.log',
+        'wireguard' => '/data/logs/wireguard.log',
+        'admin-error' => '/data/logs/admin-error.log',
+    ];
+
     public function index(): void {
         $page = 'console';
         require __DIR__ . '/../View/layout.php';
     }
 
-    public function stream(): void {
+    /**
+     * GET /api/console/poll?positions={"nginx-error":1234,...}
+     *
+     * Returns new log lines since the given byte positions.
+     * Client polls every 2 seconds. Each request takes ~50ms
+     * and releases the PHP-FPM worker immediately.
+     */
+    public function poll(): void {
+        header('Content-Type: application/json');
+
+        $positions = json_decode($_GET['positions'] ?? '{}', true) ?: [];
+
         $streamer = new LogStreamer();
-        $streamer->stream([
-            DATA_DIR . '/logs/nginx-error.log',
-            DATA_DIR . '/logs/php-fpm-error.log',
-            DATA_DIR . '/logs/nginx-access.log',
-            DATA_DIR . '/logs/wireguard.log',
-            DATA_DIR . '/logs/admin-error.log',
-        ]);
+        $result = $streamer->poll(self::LOG_FILES, $positions);
+
+        echo json_encode($result);
     }
 
+    /**
+     * POST /api/console/command
+     * Body: {"command": "wg show"}
+     */
     public function command(): void {
         header('Content-Type: application/json');
         $input = json_decode(file_get_contents('php://input'), true);

@@ -1,13 +1,19 @@
-// Console — xterm.js terminal with SSE log streaming + command input
-// Ref: Pelican Panel server-console.blade.php (adapted from WebSocket to SSE)
+// Console — xterm.js terminal with log polling + command input
+//
+// Why polling instead of SSE:
+// SSE holds a PHP-FPM worker for the entire connection, starving other
+// requests (files, dashboard, settings). Polling releases the worker
+// immediately after each 50ms request. 2s interval is fast enough for logs.
+//
+// Ref: Pelican Panel uses WebSocket via Wings daemon (Go process).
+// We don't have a Go daemon, so polling is the proper PHP approach.
 
 const PRELUDE = '\x1b[1m\x1b[33mwg-nginx ~ \x1b[0m';
 const ERROR_STYLE = '\x1b[1m\x1b[31m';
 const INFO_STYLE = '\x1b[1m\x1b[32m';
-const WARN_STYLE = '\x1b[1m\x1b[33m';
 const RESET = '\x1b[0m';
 
-// Theme from Pelican Panel
+// Theme from Pelican Panel (server-console.blade.php)
 const theme = {
     background: 'rgba(19,26,32,0.7)',
     cursor: 'transparent',
@@ -43,12 +49,11 @@ const terminal = new Terminal({
 
 const fitAddon = new FitAddon.FitAddon();
 terminal.loadAddon(fitAddon);
-
 terminal.open(document.getElementById('terminal'));
 fitAddon.fit();
 window.addEventListener('resize', () => fitAddon.fit());
 
-// Copy support (Ctrl+C)
+// Ctrl+C = copy selection
 terminal.attachCustomKeyEventHandler((event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
         navigator.clipboard.writeText(terminal.getSelection());
@@ -57,45 +62,41 @@ terminal.attachCustomKeyEventHandler((event) => {
     return true;
 });
 
-// Write welcome message
-terminal.writeln(PRELUDE + INFO_STYLE + 'Console connected. Streaming live logs...' + RESET);
+terminal.writeln(PRELUDE + INFO_STYLE + 'Console ready. Polling logs every 2s...' + RESET);
 terminal.writeln(PRELUDE + 'Type commands below. Use "help" for available commands.' + RESET);
 terminal.writeln('');
 
-// SSE connection for real-time log streaming
-function connectSSE() {
-    const source = new EventSource('/api/console/stream');
+// Log polling — tracks byte positions per file, fetches only new data
+let logPositions = {};
 
-    source.onopen = () => {
-        terminal.writeln(PRELUDE + INFO_STYLE + '[SSE connected]' + RESET);
-    };
+async function pollLogs() {
+    try {
+        const posParam = encodeURIComponent(JSON.stringify(logPositions));
+        const data = await api.get('/api/console/poll?positions=' + posParam);
+        if (!data) return;
 
-    source.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            const sourceLabel = data.source || 'log';
-            const time = data.time || '';
+        // Update positions for next poll
+        logPositions = data.positions;
 
-            // Color-code by source
-            let style = '';
-            if (sourceLabel.includes('error')) style = ERROR_STYLE;
-            else if (sourceLabel.includes('access')) style = '\x1b[90m'; // dim
-            else if (sourceLabel.includes('wireguard')) style = '\x1b[36m'; // cyan
+        // Render new lines
+        if (data.lines && data.lines.length > 0) {
+            data.lines.forEach(entry => {
+                let style = '';
+                if (entry.source.includes('error')) style = ERROR_STYLE;
+                else if (entry.source.includes('access')) style = '\x1b[90m';
+                else if (entry.source.includes('wireguard')) style = '\x1b[36m';
 
-            terminal.writeln(`${style}[${time}][${sourceLabel}]${RESET} ${data.line}`);
-        } catch (e) {
-            // Non-JSON event (e.g. connected event)
+                terminal.writeln(`${style}[${entry.time}][${entry.source}]${RESET} ${entry.line}`);
+            });
         }
-    };
-
-    source.onerror = () => {
-        terminal.writeln(PRELUDE + ERROR_STYLE + '[SSE disconnected — reconnecting in 3s...]' + RESET);
-        source.close();
-        setTimeout(connectSSE, 3000);
-    };
+    } catch (e) {
+        // Silent — will retry on next poll
+    }
 }
 
-connectSSE();
+// Start polling
+pollLogs();
+setInterval(pollLogs, 2000);
 
 // Command input
 const cmdInput = document.getElementById('command-input');
@@ -125,7 +126,6 @@ cmdInput.addEventListener('keydown', async (e) => {
         terminal.writeln('');
     }
 
-    // Command history (up/down arrows)
     if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (historyIndex < cmdHistory.length - 1) {

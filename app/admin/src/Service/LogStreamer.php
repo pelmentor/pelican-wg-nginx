@@ -2,65 +2,54 @@
 
 class LogStreamer {
     /**
-     * Stream log file changes via Server-Sent Events (SSE).
-     * This is a long-lived connection — the function never returns.
-     * Nginx must have fastcgi_buffering off for this endpoint.
+     * Return recent log lines since a given position.
+     *
+     * Why polling instead of SSE:
+     * SSE (Server-Sent Events) holds a PHP-FPM worker for the entire
+     * connection lifetime. With ondemand pool, this permanently consumes
+     * a worker, starving other requests (file manager, dashboard, etc.).
+     * Polling with 2s interval uses a worker for ~50ms per request.
+     *
+     * The client sends the last known file positions (byte offsets).
+     * We read new data from those positions and return it with updated offsets.
+     * This is efficient — no re-reading old data.
      */
-    public function stream(array $logFiles): void {
-        header('Content-Type: text/event-stream');
-        header('Cache-Control: no-cache');
-        header('Connection: keep-alive');
-        header('X-Accel-Buffering: no');
+    public function poll(array $logFiles, array $positions): array {
+        $lines = [];
+        $newPositions = $positions;
 
-        while (ob_get_level()) ob_end_clean();
-        set_time_limit(0);
+        foreach ($logFiles as $key => $file) {
+            if (!file_exists($file)) continue;
 
-        // Open files and seek to end
-        $handles = [];
-        foreach ($logFiles as $file) {
-            if (file_exists($file)) {
+            $size = filesize($file);
+            $pos = $positions[$key] ?? $size; // Default: start from end (no old data)
+
+            // File was truncated (log rotation) — reset to beginning
+            if ($pos > $size) $pos = 0;
+
+            if ($pos < $size) {
                 $h = fopen($file, 'r');
-                fseek($h, 0, SEEK_END);
-                $handles[$file] = $h;
-            }
-        }
+                fseek($h, $pos);
+                $chunk = fread($h, min($size - $pos, 65536)); // Max 64KB per poll
+                fclose($h);
 
-        echo "event: connected\ndata: " . json_encode(['files' => array_keys($handles)]) . "\n\n";
-        flush();
-
-        $lastPing = time();
-
-        while (!connection_aborted()) {
-            $hasData = false;
-
-            foreach ($handles as $file => $h) {
-                $line = fgets($h);
-                if ($line !== false) {
-                    $hasData = true;
+                if ($chunk) {
                     $source = basename($file, '.log');
-                    echo "data: " . json_encode([
-                        'source' => $source,
-                        'line' => rtrim($line),
-                        'time' => date('H:i:s'),
-                    ]) . "\n\n";
+                    foreach (explode("\n", rtrim($chunk)) as $line) {
+                        if ($line === '') continue;
+                        $lines[] = [
+                            'source' => $source,
+                            'line' => $line,
+                            'time' => date('H:i:s'),
+                        ];
+                    }
                 }
+                $newPositions[$key] = $size;
+            } else {
+                $newPositions[$key] = $size;
             }
-
-            if ($hasData) {
-                flush();
-            }
-
-            // Send keepalive ping every 15 seconds
-            if (time() - $lastPing >= 15) {
-                echo ": ping\n\n";
-                flush();
-                $lastPing = time();
-            }
-
-            // Don't spin CPU — sleep 200ms between checks
-            usleep(200000);
         }
 
-        foreach ($handles as $h) fclose($h);
+        return ['lines' => $lines, 'positions' => $newPositions];
     }
 }

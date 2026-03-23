@@ -1,0 +1,6 @@
+docker stop wg-nginx && docker rm wg-nginx && docker rmi ghcr.io/pelmentor/wg-nginx:latest
+docker pull ghcr.io/pelmentor/wg-nginx:latest
+docker run -d --name wg-nginx --cap-add=NET_ADMIN \
+  -p 7890:7890 -p 9876:9876 \
+  -v /mnt/user/appdata/wg-nginx:/data \
+  ghcr.io/pelmentor/wg-nginx:latest
