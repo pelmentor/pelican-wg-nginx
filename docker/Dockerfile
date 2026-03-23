@@ -22,10 +22,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Packages — single RUN layer to minimize image size
 # =============================================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # WireGuard
+    # WireGuard — sudo is required because wg-quick calls it internally
+    # (line 85 of wg-quick: "exec sudo ...") even when running as non-root
     wireguard-tools \
     iproute2 \
     iptables \
+    sudo \
     # Nginx
     nginx \
     # PHP-FPM + common modules for web applications
@@ -47,7 +49,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # User container (UID 1000) — Pelican/Pterodactyl standard.
 # Ref: pterodactyl.io/community/config/eggs/creating_a_custom_image.html
 # =============================================================================
-RUN useradd -m -d /home/container -s /bin/bash -u 1000 container
+RUN useradd -m -d /home/container -s /bin/bash -u 1000 container \
+    # wg-quick uses "sudo" to run wg, ip, and sysctl commands.
+    # Grant passwordless sudo for WG-related binaries only (least privilege).
+    && echo "container ALL=(ALL) NOPASSWD: /usr/bin/wg, /usr/bin/wg-quick, /sbin/ip, /usr/sbin/sysctl, /sbin/iptables, /sbin/iptables-restore" \
+       > /etc/sudoers.d/wireguard \
+    && chmod 440 /etc/sudoers.d/wireguard
 
 # =============================================================================
 # Directories — ALL under /home/container/ (persistent Pelican volume).
