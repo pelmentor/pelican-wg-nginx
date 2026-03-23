@@ -283,3 +283,85 @@ if (clearBtn) {
         terminal.writeln('');
     });
 }
+
+// --- Live stats on console page (like Pelican) ---
+// Polls /api/stats and updates the mini stat widgets above the terminal.
+let prevConsoleNet = null;
+let prevConsoleTime = null;
+
+async function updateConsoleStats() {
+    try {
+        const data = await api.get('/api/stats');
+        if (!data) return;
+        const now = Date.now();
+
+        const cpuEl = document.getElementById('console-cpu');
+        const memEl = document.getElementById('console-memory');
+        const netEl = document.getElementById('console-network');
+
+        if (cpuEl) cpuEl.textContent = parseFloat(data.cpu.percent).toFixed(1) + '%';
+        if (memEl) memEl.textContent = parseFloat(data.memory.used_mb).toFixed(0) + ' MiB';
+
+        if (netEl) {
+            const net = data.network.eth0 || {};
+            if (prevConsoleNet && prevConsoleTime) {
+                const elapsed = (now - prevConsoleTime) / 1000;
+                if (elapsed > 0) {
+                    const rx = ((net.rx_bytes || 0) - prevConsoleNet.rx) / elapsed / 1024;
+                    const tx = ((net.tx_bytes || 0) - prevConsoleNet.tx) / elapsed / 1024;
+                    netEl.textContent = '↓' + rx.toFixed(1) + ' ↑' + tx.toFixed(1) + ' KiB/s';
+                }
+            }
+            prevConsoleNet = { rx: net.rx_bytes || 0, tx: net.tx_bytes || 0 };
+            prevConsoleTime = now;
+        }
+
+        // Update header uptime if available
+        const headerUptime = document.getElementById('header-uptime');
+        if (headerUptime && data.uptime) {
+            const d = Math.floor(data.uptime / 86400);
+            const h = Math.floor((data.uptime % 86400) / 3600);
+            const m = Math.floor((data.uptime % 3600) / 60);
+            headerUptime.textContent = '(' + (d > 0 ? d + 'd ' : '') + h + 'h ' + m + 'm)';
+        }
+    } catch (_) {}
+}
+
+updateConsoleStats();
+setInterval(updateConsoleStats, 3000);
+
+// --- Power controls (Restart/Stop services) ---
+const ConsoleActions = {
+    async restartAll() {
+        if (!confirm('Restart all services (Nginx + PHP-FPM + WireGuard)?')) return;
+        terminal.writeln('');
+        terminal.writeln(PRELUDE + WARN_STYLE + 'Restarting services...' + RESET);
+
+        const results = await Promise.all([
+            api.post('/api/settings/service', { service: 'nginx', action: 'restart' }),
+            api.post('/api/settings/service', { service: 'php-fpm', action: 'restart' }),
+            api.post('/api/settings/service', { service: 'wireguard', action: 'restart' }),
+        ]);
+
+        results.forEach(r => {
+            if (r && r.output) {
+                r.output.split('\n').forEach(line => {
+                    terminal.writeln('  ' + line);
+                });
+            }
+        });
+        terminal.writeln(PRELUDE + INFO_STYLE + 'Services restarted.' + RESET);
+        terminal.writeln('');
+    },
+
+    async stopAll() {
+        if (!confirm('Stop all services? The container will exit.')) return;
+        terminal.writeln('');
+        terminal.writeln(PRELUDE + ERROR_STYLE + 'Stopping services...' + RESET);
+
+        await api.post('/api/settings/service', { service: 'nginx', action: 'restart' });
+        await api.post('/api/settings/service', { service: 'wireguard', action: 'down' });
+
+        terminal.writeln(PRELUDE + ERROR_STYLE + 'Services stopped.' + RESET);
+    },
+};
