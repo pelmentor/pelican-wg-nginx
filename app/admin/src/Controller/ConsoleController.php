@@ -57,10 +57,18 @@ class ConsoleController {
         }
 
         // Ping — validate host to prevent injection
+        if ($cmd === 'ping') {
+            echo json_encode(['output' => "Usage: ping <host>\nExample: ping 10.0.0.1\n         ping google.com"]);
+            return;
+        }
         if (preg_match('/^ping\s+([\w.\-:]+)$/', $cmd, $m)) {
             ActivityLog::log('console.command', $cmd);
             $output = shell_exec('ping -c 4 -W 3 ' . escapeshellarg($m[1]) . ' 2>&1');
             echo json_encode(['output' => $output]);
+            return;
+        }
+        if (str_starts_with($cmd, 'ping ')) {
+            echo json_encode(['output' => "Invalid host. Usage: ping <host>\nHost can contain letters, numbers, dots, hyphens."]);
             return;
         }
 
