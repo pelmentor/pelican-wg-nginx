@@ -1,30 +1,60 @@
 #!/bin/bash
 # =============================================================================
-# Entrypoint для контейнера WireGuard + Nginx + PHP-FPM
+# Entrypoint for WireGuard + Nginx + PHP-FPM Pelican Egg
 # =============================================================================
-# Pelican runs containers as UID 1000 (non-root). System dirs (/etc, /run,
-# /var/log) are read-only. ALL runtime files go to /home/container/ which
-# is a persistent volume mounted by Wings.
 #
-# Startup order:
-# 1. Show versions and PHP extensions
-# 2. Zombie cleanup (ref: linuxserver/nginx)
-# 3. Log rotation (truncate logs >10MB)
-# 4. sysctl for WG client mode (ref: linuxserver/wireguard)
-# 5. Generate wg0.conf from Pelican env vars
-# 6. Bring up WireGuard interface
-# 7. Substitute port/socket in nginx and php-fpm configs
-# 8. Start PHP-FPM (background)
-# 9. Start Nginx (background)
-# 10. Tail error logs to Pelican console
-# 11. wait -n — if any process exits, container exits
+# ENVIRONMENT CONSTRAINTS (Pelican-specific):
+#   - Container runs as UID 1000 (user "container"), NOT root
+#   - System dirs (/etc, /run, /var/log) are READ-ONLY
+#   - Only /home/container/ is writable (persistent volume from Wings)
+#   - Pelican sends "^^C" (SIGINT) to stop the server (egg config.stop)
 #
-# Graceful shutdown:
-# - Tini (PID 1) catches SIGTERM/SIGINT from Pelican (egg stop: "^^C")
-# - Trap sends SIGQUIT (graceful) to nginx and php-fpm
-# - WG interface torn down via wg-quick down
+# PROCESS MODEL:
+#   PID 1: tini (zombie reaper + signal forwarder, see Dockerfile)
+#     └── entrypoint.sh (this script)
+#           ├── php-fpm (background, --nodaemonize)
+#           ├── nginx (background, daemon off)
+#           ├── tail -F (background, streams error logs to Pelican console)
+#           └── wait -n (blocks until any child exits)
+#
+#   WireGuard is NOT a process — it runs in the kernel. wg-quick only
+#   configures the interface and exits (oneshot pattern).
+#
+# STARTUP ORDER:
+#   0. Show versions, cleanup zombies, rotate logs, create dirs
+#   1. Generate wg0.conf from env vars → wg-quick up (if WG keys set)
+#   2. Substitute {{placeholders}} in nginx.conf and php-fpm.conf
+#   3. Start PHP-FPM → wait for unix socket to appear
+#   4. Start Nginx
+#   5. Print "All services started successfully!" (Pelican done marker)
+#   6. Tail error logs to Pelican console
+#   7. wait -n — block until any child exits → trigger cleanup
+#
+# SHUTDOWN (trap → cleanup function):
+#   1. Kill tail process (log streamer)
+#   2. Send SIGQUIT to Nginx (graceful: finishes in-flight requests)
+#   3. Send SIGQUIT to PHP-FPM (graceful: finishes active workers)
+#   4. Wait for both to exit
+#   5. wg-quick down (removes WG interface and routes)
+#   6. Exit 0
+#
+#   Why SIGQUIT and not SIGTERM:
+#   SIGQUIT = graceful shutdown in both nginx and php-fpm (official Docker
+#   images use STOPSIGNAL SIGQUIT for this reason). SIGTERM would kill
+#   them immediately, dropping in-flight requests.
+#
+# SIGNAL FLOW:
+#   Pelican Panel → "^^C" → Wings → SIGINT → Docker → tini (PID 1)
+#   tini forwards SIGINT to entrypoint.sh (direct child)
+#   entrypoint.sh trap catches SIGINT → calls cleanup()
+#   cleanup() sends SIGQUIT to nginx and php-fpm (graceful)
+#
+#   The -g flag on tini also forwards signals to the entire process group,
+#   so even if the trap doesn't fire, all children receive the signal.
 # =============================================================================
 
+# Exit immediately on error. Treat unset variables as errors.
+# Fail pipelines on first error (not just last command).
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -52,21 +82,43 @@ NGINX_PID_FILE="${HC}/tmp/nginx.pid"
 NGINX_TEMP="${HC}/tmp/nginx"
 
 # ---------------------------------------------------------------------------
-# Graceful shutdown
-# Ref: official nginx/php-fpm — SIGQUIT = graceful (waits for in-flight requests)
-# Ref: linuxserver/wireguard — wg-quick down in reverse order
+# Graceful shutdown handler
+# ---------------------------------------------------------------------------
+# This function is called when the container receives a stop signal.
+# It is registered as a trap for SIGTERM and SIGINT (see below).
+#
+# Shutdown order matters:
+#   1. Kill tail first — stop streaming logs (cosmetic, avoids noise)
+#   2. SIGQUIT to nginx — stops accepting new connections, finishes current
+#   3. SIGQUIT to php-fpm — finishes processing active PHP requests
+#   4. wait — ensure both have fully exited before proceeding
+#   5. wg-quick down — removes WG interface, cleans up routes and iptables
+#
+# Why "|| true" after every kill/wait:
+#   The process might already be dead (crashed earlier, or never started).
+#   Without "|| true", the script would exit on error due to set -e.
+#
+# Ref: official nginx image uses STOPSIGNAL SIGQUIT
+# Ref: official php-fpm image uses STOPSIGNAL SIGQUIT
+# Ref: linuxserver/wireguard tears down tunnels in reverse order
 # ---------------------------------------------------------------------------
 cleanup() {
     log_info "Shutting down..."
-    kill "$TAIL_PID" 2>/dev/null || true
-    kill -SIGQUIT "$NGINX_PID" 2>/dev/null || true
-    kill -SIGQUIT "$PHP_FPM_PID" 2>/dev/null || true
-    wait "$NGINX_PID" 2>/dev/null || true
-    wait "$PHP_FPM_PID" 2>/dev/null || true
-    wg-quick down "$WG_CONF" 2>/dev/null || true
+    kill "$TAIL_PID" 2>/dev/null || true        # 1. Stop log tail
+    kill -SIGQUIT "$NGINX_PID" 2>/dev/null || true    # 2. Graceful nginx stop
+    kill -SIGQUIT "$PHP_FPM_PID" 2>/dev/null || true  # 3. Graceful php-fpm stop
+    wait "$NGINX_PID" 2>/dev/null || true        # 4. Wait for nginx exit
+    wait "$PHP_FPM_PID" 2>/dev/null || true      #    Wait for php-fpm exit
+    wg-quick down "$WG_CONF" 2>/dev/null || true # 5. Tear down WG interface
     log_info "Shutdown complete."
     exit 0
 }
+
+# Register the cleanup function as a signal handler.
+# SIGTERM: sent by Docker on "docker stop" (default)
+# SIGINT:  sent by Pelican via "^^C" (egg config.stop)
+# When either signal arrives, bash interrupts the current command (wait -n)
+# and executes cleanup() instead of the default behavior (terminate).
 trap cleanup SIGTERM SIGINT
 
 # ===========================================================================
@@ -95,11 +147,20 @@ mkdir -p "${NGINX_TEMP}"
 rm -f "$PHP_FPM_SOCK" "$NGINX_PID_FILE"
 
 # ---------------------------------------------------------------------------
-# Log rotation — truncate logs over 10MB to prevent disk fill.
-# No logrotate available in this minimal image, so we do it simply:
-# if a log file exceeds 10MB, keep only the last 1000 lines.
-# This runs once at startup — for long-running containers, logs are
-# also bounded by Pelican's own Docker log limits (see Wings config).
+# Log rotation — simple startup-time rotation to prevent disk fill.
+# ---------------------------------------------------------------------------
+# Why not logrotate? This is a minimal image — installing logrotate would
+# add cron, config files, and complexity. Instead, we check log sizes
+# once at each container start.
+#
+# How it works:
+#   - For each .log file in /home/container/logs/
+#   - If the file exceeds 10MB (10485760 bytes)
+#   - Keep only the last 1000 lines, discard the rest
+#   - This preserves recent logs while reclaiming disk space
+#
+# For long-running containers between restarts, Docker's own log driver
+# limits output (see Wings config: docker.log_config.max-size).
 # ---------------------------------------------------------------------------
 LOG_MAX_BYTES=10485760  # 10MB
 for logfile in "${HC}/logs/"*.log; do
@@ -274,17 +335,37 @@ log_info "============================================"
 echo ""
 
 # ===========================================================================
-# Tail error logs to Pelican console.
-# Only error logs — access log is too noisy for the console.
-# Users can view access logs via File Manager at logs/nginx-access.log.
+# STEP 5: Stream error logs to Pelican console
+# ===========================================================================
+# tail -F follows log files even if they are recreated (unlike tail -f).
+# Only error logs are streamed — access log would flood the console.
+# Access logs are still available in File Manager: logs/nginx-access.log
+#
+# touch ensures the files exist before tail starts (tail -F would wait
+# for them, but touch avoids a confusing "file not found" message).
 # ===========================================================================
 touch "${HC}/logs/nginx-error.log" "${HC}/logs/php-fpm-error.log"
 tail -F "${HC}/logs/nginx-error.log" "${HC}/logs/php-fpm-error.log" 2>/dev/null &
 TAIL_PID=$!
 
 # ===========================================================================
-# Wait for any process to exit. If one crashes, exit entirely.
-# Pelican will see the container exit and can restart it.
+# STEP 6: Wait for service exit
+# ===========================================================================
+# "wait -n" (bash 4.3+) blocks until ANY of the listed PIDs exits.
+# This is the core supervision mechanism:
+#
+#   - If nginx crashes → wait -n returns → cleanup runs → container exits
+#   - If php-fpm crashes → same
+#   - If SIGTERM/SIGINT arrives → trap fires → cleanup runs → container exits
+#
+# Why not restart the crashed service?
+#   In a single-container Pelican model, a partial restart is risky.
+#   Pelican's crash detection (Wings) can restart the entire container,
+#   which gives a clean state. This is simpler and more reliable than
+#   in-container service supervision (which would need s6-overlay).
+#
+# The "|| true" prevents set -e from killing the script if wait -n
+# returns a non-zero exit code (which it does when a child crashes).
 # ===========================================================================
 wait -n "$PHP_FPM_PID" "$NGINX_PID" 2>/dev/null || true
 log_error "A service has exited unexpectedly!"
