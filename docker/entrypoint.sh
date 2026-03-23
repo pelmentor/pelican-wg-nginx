@@ -257,13 +257,34 @@ fi
 log_step "Configuring Nginx and PHP-FPM..."
 
 # Pelican provides the primary allocation port via SERVER_PORT.
+# If no allocation exists, SERVER_PORT will be 0 or unset.
 log_info "Port env: SERVER_PORT=${SERVER_PORT:-<unset>}, P_SERVER_PORT=${P_SERVER_PORT:-<unset>}"
 
-SERVER_PORT="${SERVER_PORT:-${P_SERVER_PORT:-7890}}"
+SERVER_PORT="${SERVER_PORT:-${P_SERVER_PORT:-0}}"
 
-# If Pelican passed 0 (no allocation), fall back to 7890
+# ===========================================================================
+# PORT VALIDATION
+# If SERVER_PORT is 0, it means no port allocation was assigned in Pelican.
+# Without an allocation, Docker does NOT map any ports — the container is
+# unreachable from outside even though nginx starts. This is the #1 setup
+# mistake, so we make it very loud and clear.
+# ===========================================================================
 if [ "$SERVER_PORT" = "0" ] || [ -z "$SERVER_PORT" ]; then
-    log_warn "SERVER_PORT is 0 or empty — defaulting to 7890"
+    echo ""
+    log_error "======================================================="
+    log_error "  NO PORT ALLOCATION!"
+    log_error "======================================================="
+    log_error "  SERVER_PORT is 0 — no port was assigned to this server."
+    log_error "  The web server will NOT be reachable from outside."
+    log_error ""
+    log_error "  HOW TO FIX:"
+    log_error "  1. Go to Pelican Panel → Admin → Servers → this server"
+    log_error "  2. Under 'Build Configuration' → 'Allocations'"
+    log_error "  3. Assign a port (e.g. 7890)"
+    log_error "  4. Save and restart the server"
+    log_error "======================================================="
+    echo ""
+    log_warn "Starting anyway on port 7890 (internal only, not mapped)..."
     SERVER_PORT=7890
 fi
 
