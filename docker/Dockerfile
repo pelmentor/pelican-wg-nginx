@@ -56,6 +56,7 @@ RUN useradd -m -d /home/container -s /bin/bash -u 1000 container
 # PID files and unix sockets are ephemeral runtime data — /tmp is the
 # correct writable location in this environment.
 # Ref: trafex/docker-php-nginx uses the same /tmp approach.
+# /var/log/nginx must be writable — nginx writes to it before reading config
 RUN mkdir -p \
     /home/container/{webroot,wg,nginx,php,logs,tmp} \
     /defaults \
@@ -63,7 +64,8 @@ RUN mkdir -p \
     /tmp/nginx /tmp/php /tmp/run-nginx \
     && chown -R container:container \
     /home/container /var/lib/nginx /var/log/nginx \
-    /tmp/nginx /tmp/php /tmp/run-nginx
+    /tmp/nginx /tmp/php /tmp/run-nginx \
+    && chmod 777 /var/log/nginx
 
 # Конфиги: копируем И в /home/container (рабочие), И в /defaults (бэкап)
 COPY nginx.conf /defaults/nginx.conf
