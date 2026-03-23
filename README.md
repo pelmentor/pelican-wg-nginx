@@ -93,6 +93,36 @@ Mount `/data` to persist everything:
 5. Extra parameters: `--cap-add=NET_ADMIN`
 6. Optional: add WG env vars if you need VPN
 
+## Testing & Update Cycle
+
+```bash
+# Pull and run
+docker pull ghcr.io/pelmentor/wg-nginx:latest
+docker run -d --name wg-nginx --cap-add=NET_ADMIN \
+  -p 7890:7890 -p 8443:8443 \
+  -v /mnt/user/appdata/wg-nginx:/data \
+  ghcr.io/pelmentor/wg-nginx:latest
+
+# Get admin password
+docker logs wg-nginx
+
+# Debug
+docker logs wg-nginx --tail 50
+docker exec -it wg-nginx bash
+
+# Update to new version
+docker stop wg-nginx && docker rm wg-nginx
+docker pull ghcr.io/pelmentor/wg-nginx:latest
+# then docker run again (same command as above)
+
+# Full cleanup (removes everything including data)
+docker stop wg-nginx && docker rm wg-nginx
+docker rmi ghcr.io/pelmentor/wg-nginx:latest
+rm -rf /mnt/user/appdata/wg-nginx
+```
+
+> **Note:** Data in `/mnt/user/appdata/wg-nginx` survives `docker rm`. Only deleting that folder is a full reset.
+
 ## Architecture
 
 ```
