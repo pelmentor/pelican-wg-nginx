@@ -1,4 +1,4 @@
-// Settings — config editor + service controls
+// Settings — config editor + service controls (Pelican Panel style)
 
 const Settings = {
     activeTab: null,
@@ -6,19 +6,24 @@ const Settings = {
     async loadConfig(name) {
         // Update tab styles
         document.querySelectorAll('.config-tab').forEach(tab => {
-            tab.classList.remove('border-blue-500', 'text-white');
-            tab.classList.add('border-transparent', 'text-gray-400');
+            tab.classList.remove('text-white');
+            tab.classList.add('text-gray-500');
+            tab.querySelector('.config-tab-indicator').style.opacity = '0';
         });
         const activeTab = document.querySelector(`[data-tab="${name}"]`);
-        activeTab.classList.add('border-blue-500', 'text-white');
-        activeTab.classList.remove('border-transparent', 'text-gray-400');
+        activeTab.classList.add('text-white');
+        activeTab.classList.remove('text-gray-500');
+        activeTab.querySelector('.config-tab-indicator').style.opacity = '1';
 
         this.activeTab = name;
+        this.setStatus('Loading...');
         const data = await api.get('/api/settings/config?file=' + name);
         if (data && data.content !== undefined) {
             document.getElementById('config-editor').value = data.content;
+            this.setStatus('');
         } else {
             document.getElementById('config-editor').value = data?.error || 'Failed to load config';
+            this.setStatus('Failed to load');
         }
     },
 
@@ -28,18 +33,23 @@ const Settings = {
             return;
         }
         const content = document.getElementById('config-editor').value;
+        this.setStatus('Saving...');
         const result = await api.post('/api/settings/config', {
             file: this.activeTab,
             content: content,
         });
         if (result?.success) {
+            this.setStatus('Saved');
             this.showOutput('Config saved successfully.');
+            setTimeout(() => this.setStatus(''), 3000);
         } else {
+            this.setStatus('Error');
             this.showOutput('Error: ' + (result?.error || 'Failed to save'));
         }
     },
 
     async service(name, action) {
+        this.showOutput(`Running ${action} on ${name}...`);
         const result = await api.post('/api/settings/service', { service: name, action: action });
         if (result) {
             this.showOutput(`[${name}] ${action}: ${result.output || 'Done'}`);
@@ -47,11 +57,20 @@ const Settings = {
     },
 
     showOutput(text) {
-        const el = document.getElementById('service-output');
-        el.textContent = text;
-        el.classList.remove('hidden');
-        setTimeout(() => el.classList.add('hidden'), 8000);
+        const container = document.getElementById('service-output');
+        const textEl = document.getElementById('service-output-text');
+        textEl.textContent = text;
+        container.classList.remove('hidden');
+        clearTimeout(this._outputTimer);
+        this._outputTimer = setTimeout(() => container.classList.add('hidden'), 10000);
     },
+
+    setStatus(text) {
+        const el = document.getElementById('config-status');
+        if (el) el.textContent = text;
+    },
+
+    _outputTimer: null,
 };
 
 // Load nginx config by default
