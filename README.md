@@ -11,6 +11,7 @@ Custom egg for [Pelican Panel](https://pelican.dev) (Pterodactyl fork). Runs a c
 - **Error logs streamed to Pelican console** in real time (nginx errors, PHP-FPM errors)
 - **Log rotation at startup** — log files exceeding 10 MB are truncated to the last 1000 lines
 - **Configs editable via Pelican File Manager** — nginx.conf and php-fpm.conf are auto-restored if deleted
+- **Interactive console commands** — type `help` in Pelican console for available commands
 - **Default fallback port: 7890** — used when no allocation is provided, with a loud warning in console
 
 > **Important:** Assign a port allocation (e.g. 7890) to the server in Pelican before starting. Without it, Docker does not map any ports and the web server will be unreachable even though it starts internally. The console will display step-by-step fix instructions if this happens.
@@ -91,6 +92,23 @@ Or set up automatic delivery from the remote host over the WG tunnel:
 
 If the server is behind OPNsense, port forwarding is required.
 See [OPNSENSE.md](OPNSENSE.md) for details.
+
+## Console Commands
+
+Type these commands in the Pelican server console:
+
+| Command | Description |
+|---------|-------------|
+| `help` | Show all available commands |
+| `status` | Show status of Nginx, PHP-FPM, and WireGuard |
+| `wg show` | Show WireGuard interface status |
+| `wg peers` | Show peer details (endpoints, handshakes, transfer) |
+| `ping <host>` | Ping a host — useful for testing the WG tunnel (e.g. `ping 10.0.0.1`) |
+| `nginx reload` | Reload Nginx config without restart (tests config first) |
+| `nginx test` | Test Nginx config for syntax errors |
+| `logs access` | Show last 20 lines of the HTTP access log |
+| `logs error` | Show last 20 lines of Nginx and PHP error logs |
+| `phpinfo` | Show PHP version and all loaded extensions |
 
 ## Log Files
 

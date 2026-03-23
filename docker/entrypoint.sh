@@ -353,6 +353,8 @@ if [ "$WG_ENABLED" = true ]; then
     log_info "  WireGuard:  ${WG_ADDRESS:-10.0.0.2/24}"
 fi
 log_info "============================================"
+log_info "  Type 'help' in the console for available commands."
+log_info "============================================"
 echo ""
 
 # ===========================================================================
@@ -370,24 +372,148 @@ tail -F "${HC}/logs/nginx-error.log" "${HC}/logs/php-fpm-error.log" 2>/dev/null 
 TAIL_PID=$!
 
 # ===========================================================================
-# STEP 6: Wait for service exit
+# STEP 6: Interactive command handler
 # ===========================================================================
-# "wait -n" (bash 4.3+) blocks until ANY of the listed PIDs exits.
-# This is the core supervision mechanism:
+# Pelican console sends user input to the container's stdin.
+# This loop reads stdin and executes supported commands.
 #
-#   - If nginx crashes → wait -n returns → cleanup runs → container exits
-#   - If php-fpm crashes → same
-#   - If SIGTERM/SIGINT arrives → trap fires → cleanup runs → container exits
+# Why a command handler instead of a raw shell:
+#   - Security: only whitelisted commands are allowed
+#   - UX: user sees available commands via "help"
+#   - Safety: prevents accidental damage to the container
 #
-# Why not restart the crashed service?
-#   In a single-container Pelican model, a partial restart is risky.
-#   Pelican's crash detection (Wings) can restart the entire container,
-#   which gives a clean state. This is simpler and more reliable than
-#   in-container service supervision (which would need s6-overlay).
+# The loop also monitors nginx and php-fpm PIDs. If either process
+# exits, the loop breaks and cleanup runs (same as wait -n would).
 #
-# The "|| true" prevents set -e from killing the script if wait -n
-# returns a non-zero exit code (which it does when a child crashes).
+# Commands are processed in the background read loop. If no input
+# arrives, the loop checks process health every 2 seconds.
 # ===========================================================================
-wait -n "$PHP_FPM_PID" "$NGINX_PID" 2>/dev/null || true
-log_error "A service has exited unexpectedly!"
+print_help() {
+    echo ""
+    log_info "Available commands:"
+    log_info "  help              — show this help message"
+    log_info "  status            — show status of all services"
+    log_info "  wg show           — show WireGuard interface status"
+    log_info "  wg peers          — show WireGuard peer details"
+    log_info "  ping <host>       — ping a host (useful for testing WG tunnel)"
+    log_info "  nginx reload      — reload Nginx config without restart"
+    log_info "  nginx test        — test Nginx config for errors"
+    log_info "  logs access       — show last 20 lines of access log"
+    log_info "  logs error        — show last 20 lines of error log"
+    log_info "  phpinfo           — show PHP version and loaded extensions"
+    echo ""
+}
+
+# Show help once at startup so user knows commands are available
+print_help
+
+while true; do
+    # Check if nginx or php-fpm have exited
+    if ! kill -0 "$NGINX_PID" 2>/dev/null; then
+        log_error "Nginx has exited unexpectedly!"
+        break
+    fi
+    if ! kill -0 "$PHP_FPM_PID" 2>/dev/null; then
+        log_error "PHP-FPM has exited unexpectedly!"
+        break
+    fi
+
+    # Read command from stdin (Pelican console input)
+    # -t 2 = timeout after 2 seconds (so we can check process health)
+    if read -r -t 2 CMD 2>/dev/null; then
+        # Normalize: lowercase, trim whitespace
+        CMD=$(echo "$CMD" | tr '[:upper:]' '[:lower:]' | xargs)
+
+        case "$CMD" in
+            help|"?")
+                print_help
+                ;;
+            status)
+                echo ""
+                log_info "=== Service Status ==="
+                if kill -0 "$NGINX_PID" 2>/dev/null; then
+                    log_info "  Nginx:   running (PID $NGINX_PID, port $SERVER_PORT)"
+                else
+                    log_error "  Nginx:   NOT running"
+                fi
+                if kill -0 "$PHP_FPM_PID" 2>/dev/null; then
+                    log_info "  PHP-FPM: running (PID $PHP_FPM_PID)"
+                else
+                    log_error "  PHP-FPM: NOT running"
+                fi
+                if [ "$WG_ENABLED" = true ] && ip link show wg0 >/dev/null 2>&1; then
+                    log_info "  WireGuard: up ($(ip -4 addr show wg0 2>/dev/null | grep inet | awk '{print $2}'))"
+                else
+                    log_warn "  WireGuard: disabled or down"
+                fi
+                echo ""
+                ;;
+            "wg show"|"wg status")
+                if [ "$WG_ENABLED" = true ]; then
+                    sudo wg show 2>&1
+                else
+                    log_warn "WireGuard is not enabled"
+                fi
+                ;;
+            "wg peers")
+                if [ "$WG_ENABLED" = true ]; then
+                    sudo wg show wg0 peers 2>&1
+                    sudo wg show wg0 endpoints 2>&1
+                    sudo wg show wg0 latest-handshakes 2>&1
+                    sudo wg show wg0 transfer 2>&1
+                else
+                    log_warn "WireGuard is not enabled"
+                fi
+                ;;
+            ping\ *)
+                # Extract host from "ping <host>"
+                PING_HOST="${CMD#ping }"
+                if [ -n "$PING_HOST" ]; then
+                    log_info "Pinging $PING_HOST (4 packets)..."
+                    ping -c 4 -W 3 "$PING_HOST" 2>&1 || log_error "Ping failed — host unreachable"
+                else
+                    log_warn "Usage: ping <host>"
+                fi
+                ;;
+            "nginx reload")
+                log_info "Reloading Nginx configuration..."
+                if nginx -c "${HC}/nginx/nginx.conf" -t 2>&1; then
+                    kill -SIGHUP "$NGINX_PID" 2>/dev/null
+                    log_info "Nginx reloaded successfully"
+                else
+                    log_error "Nginx config test failed — reload aborted"
+                fi
+                ;;
+            "nginx test")
+                nginx -c "${HC}/nginx/nginx.conf" -t 2>&1
+                ;;
+            "logs access")
+                echo "--- Last 20 lines of nginx-access.log ---"
+                tail -n 20 "${HC}/logs/nginx-access.log" 2>/dev/null || log_warn "No access log yet"
+                echo "---"
+                ;;
+            "logs error")
+                echo "--- Last 20 lines of nginx-error.log ---"
+                tail -n 20 "${HC}/logs/nginx-error.log" 2>/dev/null || log_warn "No error log yet"
+                echo "--- Last 20 lines of php-fpm-error.log ---"
+                tail -n 20 "${HC}/logs/php-fpm-error.log" 2>/dev/null || log_warn "No PHP error log yet"
+                echo "---"
+                ;;
+            phpinfo)
+                php -v 2>&1
+                echo ""
+                echo "Loaded extensions:"
+                php -m 2>&1
+                ;;
+            "")
+                # Empty input — ignore
+                ;;
+            *)
+                log_warn "Unknown command: $CMD"
+                log_warn "Type 'help' for available commands"
+                ;;
+        esac
+    fi
+done
+
 cleanup

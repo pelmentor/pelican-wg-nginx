@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     procps \
+    iputils-ping \
     tini \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
