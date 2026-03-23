@@ -1,148 +1,133 @@
-# Pelican Egg: WireGuard + Nginx + PHP-FPM
+# WG-Nginx: WireGuard + Nginx + PHP-FPM + Admin Panel
 
-Custom egg for [Pelican Panel](https://pelican.dev) (Pterodactyl fork). Runs a container with a WireGuard VPN client and an Nginx + PHP-FPM web server. Data can be delivered to the web server over a WG tunnel from a remote host.
+Standalone Docker image with WireGuard VPN client, Nginx web server, PHP 8.1 FPM, and a built-in Pelican-style admin panel. Designed for Unraid but works on any Docker host.
 
 ## Features
 
-- **Nginx + PHP 8.1 FPM** with curl, gd, mbstring, and zip extensions
-- **WireGuard VPN client** (optional — leave WG keys empty to run as a plain web server)
-- **PresharedKey support** for additional WireGuard encryption
-- **Version info at startup** — displays Ubuntu, Nginx, PHP, WireGuard versions and loaded PHP extensions
-- **Error logs streamed to Pelican console** in real time (nginx errors, PHP-FPM errors)
-- **Log rotation at startup** — log files exceeding 10 MB are truncated to the last 1000 lines
-- **Configs editable via Pelican File Manager** — nginx.conf and php-fpm.conf are auto-restored if deleted
-- **Interactive console commands** — type `help` in Pelican console for available commands
-- **Default fallback port: 7890** — used when no allocation is provided, with a loud warning in console
-
-> **Important:** Assign a port allocation (e.g. 7890) to the server in Pelican before starting. Without it, Docker does not map any ports and the web server will be unreachable even though it starts internally. The console will display step-by-step fix instructions if this happens.
+- **Nginx + PHP 8.1 FPM** (curl, gd, mbstring, zip, xml extensions)
+- **WireGuard VPN client** (optional — leave keys empty for a plain web server)
+- **PresharedKey support** for additional WG encryption
+- **Admin Web Panel** on a separate port with:
+  - **Dashboard** — CPU, memory, disk, network stats + service status
+  - **Console** — xterm.js terminal with live log streaming + command input
+  - **File Manager** — browse, upload, download, edit, delete files
+  - **Settings** — edit WG/Nginx/PHP configs, restart services
+- **Password-protected** — auto-generated password shown in container logs
+- **Version info at startup** — Ubuntu, Nginx, PHP, WG versions displayed
+- **Log rotation** at startup (files >10MB truncated)
 
 ## Quick Start
 
-### 1. Configure Wings
-
-Add to `/etc/pelican/config.yml` on the node:
-
-```yaml
-docker:
-  network:
-    # ... existing settings ...
-  container_pid_limit: 512
-  installer_limits:
-    memory: 1024
-    cpu: 100
-  overhead:
-    default:
-      # ... existing settings ...
-  allowed_capabilities:
-    - NET_ADMIN          # Required for WireGuard interface creation
-  allowed_devices:
-    - /dev/net/tun       # TUN device for VPN tunnels
-```
-
-Then restart Wings:
 ```bash
-sudo systemctl restart wings
+docker run -d \
+  --name wg-nginx \
+  --cap-add=NET_ADMIN \
+  -p 7890:7890 \
+  -p 8443:8443 \
+  -v /path/to/data:/data \
+  ghcr.io/pelmentor/wg-nginx:latest
 ```
 
-### 2. Build Docker Image
+Then open `http://YOUR_IP:8443` and login with the password from `docker logs wg-nginx`.
 
-```bash
-cd docker/
-docker build -t ghcr.io/pelmentor/pelican-wg-nginx:latest .
-```
+## Ports
 
-Or use the pre-built image (if published via GitHub Actions).
+| Port | Purpose |
+|------|---------|
+| `7890` (TCP) | User web content (Nginx) |
+| `8443` (TCP) | Admin panel |
+| WG_LISTEN_PORT (UDP) | WireGuard (if configured) |
 
-### 3. Import Egg into Pelican Panel
+## Environment Variables
 
-1. Go to **Admin → Nests**
-2. Click **Import Egg**
-3. Upload `egg-wg-nginx.json`
-4. Create a server using this egg
-
-### 4. Configure Server Variables
-
-When creating a server in Pelican, fill in:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `WG_PRIVATE_KEY` | WireGuard private key for this container | `aAbBcC...=` |
-| `WG_ADDRESS` | Container IP in the WG network (CIDR) | `10.0.0.2/24` |
-| `WG_PEER_PUBLIC_KEY` | Public key of the remote WG peer | `xXyYzZ...=` |
-| `WG_PEER_ENDPOINT` | Peer address and port | `vds.example.com:51820` |
-| `WG_PEER_ALLOWED_IPS` | IPs allowed through the tunnel | `10.0.0.1/32` |
-| `WG_LISTEN_PORT` | WireGuard UDP port | `51820` |
-| `WG_PRESHARED_KEY` | (Optional) PresharedKey for extra encryption | `pPqQrR...=` |
-
-All WG variables are optional — leave them empty to run as a plain web server without VPN.
-
-If no port allocation is provided by the panel, the server defaults to port **7890**.
-
-### 5. Upload Website Files
-
-Upload your files to `webroot/` via Pelican File Manager.
-
-Or set up automatic delivery from the remote host over the WG tunnel:
-```bash
-# Example: rsync every 5 minutes
-*/5 * * * * rsync -avz /path/to/data/ user@10.0.0.2:/home/container/webroot/
-```
-
-### 6. OPNsense Setup (if applicable)
-
-If the server is behind OPNsense, port forwarding is required.
-See [OPNSENSE.md](OPNSENSE.md) for details.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USER_PORT` | `7890` | Port for user web content |
+| `ADMIN_PORT` | `8443` | Port for admin panel |
+| `ADMIN_PASSWORD` | auto-generated | Admin panel password (shown in logs) |
+| `WG_PRIVATE_KEY` | empty | WireGuard private key (leave empty to disable WG) |
+| `WG_ADDRESS` | `10.0.0.2/24` | Container IP in the WG network |
+| `WG_PEER_PUBLIC_KEY` | empty | Peer public key |
+| `WG_PEER_ENDPOINT` | empty | Peer address (host:port) |
+| `WG_PEER_ALLOWED_IPS` | `10.0.0.0/24` | IPs routed through the tunnel |
+| `WG_PRESHARED_KEY` | empty | Optional preshared key |
+| `WG_LISTEN_PORT` | empty | WG listen port (if acting as server) |
 
 ## Console Commands
 
-Type these commands in the Pelican server console:
+Type these in the admin panel Console page:
 
 | Command | Description |
 |---------|-------------|
-| `help` | Show all available commands |
-| `status` | Show status of Nginx, PHP-FPM, and WireGuard |
-| `wg show` | Show WireGuard interface status |
-| `wg peers` | Show peer details (endpoints, handshakes, transfer) |
-| `ping <host>` | Ping a host — useful for testing the WG tunnel (e.g. `ping 10.0.0.1`) |
-| `nginx reload` | Reload Nginx config without restart (tests config first) |
-| `nginx test` | Test Nginx config for syntax errors |
-| `logs access` | Show last 20 lines of the HTTP access log |
-| `logs error` | Show last 20 lines of Nginx and PHP error logs |
-| `phpinfo` | Show PHP version and all loaded extensions |
+| `help` | Show available commands |
+| `status` | Show all service statuses |
+| `wg show` | WireGuard interface status |
+| `wg peers` | Peer details (endpoints, handshakes, transfer) |
+| `ping <host>` | Ping a host (e.g. `ping 10.0.0.1`) |
+| `nginx reload` | Reload Nginx config (tests first) |
+| `nginx test` | Test Nginx config for errors |
+| `logs access` | Last 30 lines of access log |
+| `logs error` | Last 30 lines of error logs |
+| `phpinfo` | PHP version and extensions |
 
-## Log Files
+## Data Volume
 
-The container writes logs to the `logs/` directory:
+Mount `/data` to persist everything:
 
-| File | Content | Streamed to console |
-|------|---------|---------------------|
-| `logs/nginx-access.log` | HTTP request log | No (file only) |
-| `logs/nginx-error.log` | Nginx errors | Yes |
-| `logs/php-fpm-error.log` | PHP errors | Yes |
-| `logs/wireguard.log` | WireGuard startup output | No |
+```
+/data/
+├── webroot/     — your website files
+├── wg/          — WireGuard config
+├── nginx/       — Nginx config (auto-generated, editable)
+├── php/         — PHP-FPM config
+├── logs/        — all log files
+└── tmp/         — runtime files (PID, socket)
+```
 
-**Auto-rotation:** At startup, any log file exceeding 10 MB is truncated to the last 1000 lines.
+## Unraid Setup
+
+1. Go to Docker tab → Add Container
+2. Repository: `ghcr.io/pelmentor/wg-nginx:latest`
+3. Add ports: `7890` (TCP), `8443` (TCP)
+4. Add path: `/data` → `/mnt/user/appdata/wg-nginx`
+5. Extra parameters: `--cap-add=NET_ADMIN`
+6. Optional: add WG env vars if you need VPN
+
+## Architecture
+
+```
+Container (root, --cap-add=NET_ADMIN)
+│
+├── Nginx (two server blocks)
+│   ├── :7890 → /data/webroot/    (user content)
+│   └── :8443 → /app/admin/       (admin panel)
+│
+├── PHP-FPM 8.1 (single pool, unix socket)
+│
+├── WireGuard (wg-quick, optional)
+│
+└── /data/ (persistent volume)
+```
 
 ## Project Structure
 
 ```
 .
-├── README.md              — this file
-├── ARCHITECTURE.md        — architecture, traffic flows, design decisions
-├── RESEARCH.md            — analysis of existing solutions (linuxserver, official nginx/php, pelican-eggs)
-├── CHANGELOG.md           — version history
-├── OPNSENSE.md            — OPNsense firewall and port forward setup
-├── WINGS-CONFIG.md        — Wings config.yml setup for NET_ADMIN and /dev/net/tun
-├── egg-wg-nginx.json      — egg for Pelican import
-└── docker/
-    ├── Dockerfile         — image build
-    ├── entrypoint.sh      — service startup script
-    ├── nginx.conf         — Nginx config template
-    └── php-fpm.conf       — PHP-FPM config template
+├── Dockerfile           — image build
+├── entrypoint.sh        — startup script
+├── app/
+│   ├── admin/           — admin panel (PHP + JS)
+│   │   ├── public/      — front controller + assets
+│   │   └── src/         — PHP backend (Router, Auth, Controllers, Services, Views)
+│   ├── nginx/           — nginx config templates
+│   └── php/             — PHP-FPM config template
+├── ARCHITECTURE.md      — detailed architecture docs
+├── RESEARCH.md          — analysis of prior art
+└── CHANGELOG.md         — version history
 ```
 
 ## Requirements
 
-- **Pelican Panel** + Wings with Docker
-- NET_ADMIN capability and /dev/net/tun (see [WINGS-CONFIG.md](WINGS-CONFIG.md))
+- Docker with `--cap-add=NET_ADMIN` (for WireGuard)
+- Port 7890 and 8443 available
 - WireGuard keys (generate with `wg genkey | tee privatekey | wg pubkey > publickey`)

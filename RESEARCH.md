@@ -1,5 +1,9 @@
 # Research — Existing Solutions and Architectural Patterns
 
+> **Note:** This research was conducted during the Pelican egg phase (v1.x).
+> The project has since pivoted to a standalone Docker image (v2.0), but the
+> findings about WireGuard, Nginx, and PHP-FPM Docker patterns remain relevant.
+
 This document captures findings from analyzing existing Docker images and
 Pelican/Pterodactyl eggs to inform our architectural decisions.
 

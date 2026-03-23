@@ -11,3 +11,5 @@
 # Old Pelican egg files (removed)
 /docker/
 egg-wg-nginx.json
+wg0-client-wgnginx.conf
+.claude/
