@@ -64,12 +64,14 @@ class ConsoleController {
             return;
         }
 
+        // SECURITY: sudo required — PHP-FPM runs as www-data, these commands need root.
+        // Allowed by /etc/sudoers.d/www-data-services (scoped whitelist).
         $result = match ($cmd) {
             'status' => $this->statusOutput(),
-            'wg show' => shell_exec('wg show 2>&1') ?: 'WireGuard not active',
-            'wg peers' => shell_exec('wg show wg0 peers 2>&1; wg show wg0 endpoints 2>&1; wg show wg0 latest-handshakes 2>&1; wg show wg0 transfer 2>&1') ?: 'No peers',
-            'nginx reload' => shell_exec('nginx -t 2>&1 && nginx -s reload 2>&1') ?: 'Reloaded',
-            'nginx test' => shell_exec('nginx -c /data/nginx/nginx.conf -t 2>&1') ?: 'OK',
+            'wg show' => shell_exec('sudo wg show 2>&1') ?: 'WireGuard not active',
+            'wg peers' => shell_exec('sudo wg show wg0 peers 2>&1; sudo wg show wg0 endpoints 2>&1; sudo wg show wg0 latest-handshakes 2>&1; sudo wg show wg0 transfer 2>&1') ?: 'No peers',
+            'nginx reload' => shell_exec('sudo nginx -t 2>&1 && sudo nginx -s reload 2>&1') ?: 'Reloaded',
+            'nginx test' => shell_exec('sudo nginx -c /data/admin/nginx/nginx.conf -t 2>&1') ?: 'OK',
             'logs access' => shell_exec('tail -n 30 ' . escapeshellarg(USER_LOGS_DIR . '/nginx-access.log') . ' 2>&1') ?: 'No log yet',
             'logs error' => shell_exec('tail -n 30 ' . escapeshellarg(USER_LOGS_DIR . '/nginx-error.log') . ' 2>&1') ?: 'No errors',
             'phpinfo' => shell_exec('php -v 2>&1') . "\n\nExtensions:\n" . shell_exec('php -m 2>&1'),

@@ -41,7 +41,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # =============================================================================
 # Packages — pinned to php8.1-* for reproducibility
-# sudo: needed by wg-quick (calls sudo internally even as root)
+# sudo: www-data (PHP-FPM) needs it to manage services (wg-quick, nginx, pkill)
 # =============================================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wireguard-tools \
@@ -63,7 +63,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iputils-ping \
     tini \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # SECURITY: Allow www-data (PHP-FPM) to manage services without password.
+    # PHP-FPM runs as www-data but wg-quick/wg/nginx need root.
+    # Scoped to specific binaries only — pkill restricted to exact USR2-to-php-fpm.
+    && echo 'www-data ALL=(root) NOPASSWD: /usr/bin/wg, /usr/bin/wg-quick, /usr/sbin/nginx, /usr/bin/pkill -SIGUSR2 php-fpm' \
+       > /etc/sudoers.d/www-data-services \
+    && chmod 440 /etc/sudoers.d/www-data-services
 
 # =============================================================================
 # Directory structure
