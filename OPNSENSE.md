@@ -1,75 +1,75 @@
-# OPNsense — Настройка firewall и port forward
+# OPNsense — Firewall and Port Forward Configuration
 
-OPNsense стоит перед Unraid-сервером и управляет всем входящим трафиком.
-Для работы этого egg нужно пробросить два порта.
+OPNsense sits in front of the Unraid server and manages all incoming traffic.
+This egg requires two ports to be forwarded.
 
-## Необходимые Port Forward правила
+## Required Port Forward Rules
 
-### 1. HTTP (веб-карта)
+### 1. HTTP (web map)
 
-Чтобы пользователи могли открыть карту из интернета.
+Allows users to access the map from the internet.
 
-| Параметр | Значение |
-|----------|----------|
+| Parameter | Value |
+|-----------|-------|
 | Interface | WAN |
 | Protocol | TCP |
 | Source | any |
 | Destination | WAN address |
-| Destination port | выбранный внешний порт (напр. `8080`) |
-| Redirect target IP | IP Unraid-сервера в LAN (напр. `192.168.1.10`) |
-| Redirect target port | порт, назначенный серверу в Pelican (SERVER_PORT) |
+| Destination port | chosen external port (e.g. `8080`) |
+| Redirect target IP | Unraid server LAN IP (e.g. `192.168.1.10`) |
+| Redirect target port | port assigned to the server in Pelican (SERVER_PORT) |
 
-**Путь в OPNsense**: Firewall → NAT → Port Forward → Add
+**OPNsense path**: Firewall -> NAT -> Port Forward -> Add
 
-### 2. WireGuard (VPN-туннель)
+### 2. WireGuard (VPN tunnel)
 
-Чтобы MC-сервер на VDS мог подключиться к WG внутри контейнера.
-Нужен **только если контейнер выступает WG-сервером** (слушает входящие).
-Если контейнер подключается к VDS как клиент — проброс не нужен.
+Allows the MC server on the VDS to connect to the WG instance inside the container.
+Required **only if the container acts as a WG server** (listening for incoming connections).
+If the container connects to the VDS as a client, no port forward is needed.
 
-| Параметр | Значение |
-|----------|----------|
+| Parameter | Value |
+|-----------|-------|
 | Interface | WAN |
 | Protocol | UDP |
-| Source | IP VDS-сервера (или any) |
+| Source | VDS server IP (or any) |
 | Destination | WAN address |
-| Destination port | WG_LISTEN_PORT (напр. `51820`) |
-| Redirect target IP | IP Unraid-сервера в LAN |
-| Redirect target port | порт WG, назначенный в Pelican |
+| Destination port | WG_LISTEN_PORT (e.g. `51820`) |
+| Redirect target IP | Unraid server LAN IP |
+| Redirect target port | WG port assigned in Pelican |
 
-**Путь в OPNsense**: Firewall → NAT → Port Forward → Add
+**OPNsense path**: Firewall -> NAT -> Port Forward -> Add
 
 ## Firewall Rules
 
-Port forward в OPNsense автоматически создаёт связанное firewall-правило.
-Убедись что:
+Port forwards in OPNsense automatically create an associated firewall rule.
+Make sure that:
 
-1. На интерфейсе WAN правило разрешает входящий трафик на указанные порты
-2. На интерфейсе LAN нет правил, блокирующих трафик к Unraid-серверу
+1. The WAN interface rule allows incoming traffic on the specified ports
+2. No LAN interface rules block traffic to the Unraid server
 
-## Схема прохождения трафика
+## Traffic Flow Diagram
 
 ```
-Пользователь (браузер)
-    │
-    │ HTTP TCP :8080
-    ▼
-[OPNsense WAN] ──NAT──→ [Unraid:8080] ──Docker──→ [Контейнер Nginx :8080]
-                                                        │
-                                                        ▼
+User (browser)
+    |
+    | HTTP TCP :8080
+    v
+[OPNsense WAN] --NAT--> [Unraid:8080] --Docker--> [Container Nginx :8080]
+                                                        |
+                                                        v
                                                    webroot/index.html
 
 
-MC-сервер (VDS)
-    │
-    │ WG UDP :51820
-    ▼
-[OPNsense WAN] ──NAT──→ [Unraid:51820] ──Docker──→ [Контейнер WireGuard wg0]
+MC server (VDS)
+    |
+    | WG UDP :51820
+    v
+[OPNsense WAN] --NAT--> [Unraid:51820] --Docker--> [Container WireGuard wg0]
 ```
 
-## Примечания
+## Notes
 
-- Если используешь VLAN на OPNsense — убедись что Unraid-сервер и Pelican Wings
-  находятся в правильном VLAN и firewall-правила между VLAN разрешают нужный трафик
-- PersistentKeepalive=25 в WG-конфиге поддерживает NAT-маппинг на OPNsense
-  (без него UDP-сессия может протухнуть и туннель отвалится)
+- If you use VLANs on OPNsense, make sure the Unraid server and Pelican Wings
+  are in the correct VLAN and that firewall rules between VLANs allow the required traffic
+- `PersistentKeepalive=25` in the WG config keeps the NAT mapping alive on OPNsense
+  (without it the UDP session can expire and the tunnel will drop)

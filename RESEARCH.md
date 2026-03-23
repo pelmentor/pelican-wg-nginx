@@ -1,103 +1,103 @@
-# Research — Существующие решения и архитектурные паттерны
+# Research — Existing Solutions and Architectural Patterns
 
-Этот документ фиксирует результаты исследования существующих Docker-образов
-и Pelican/Pterodactyl egg'ов, чтобы обосновать наши архитектурные решения
-и не изобретать велосипед.
+This document captures findings from analyzing existing Docker images and
+Pelican/Pterodactyl eggs to inform our architectural decisions.
+
+**Stack versions in this project:** Ubuntu 22.04 LTS, Nginx 1.18, PHP-FPM 8.1, WireGuard tools.
 
 ---
 
-## 1. Docker-образы WireGuard
+## 1. WireGuard Docker Images
 
 ### 1.1 linuxserver/docker-wireguard
 
-**Репозиторий**: [github.com/linuxserver/docker-wireguard](https://github.com/linuxserver/docker-wireguard)
-**Документация**: [docs.linuxserver.io/images/docker-wireguard](https://docs.linuxserver.io/images/docker-wireguard/)
+**Repository**: [github.com/linuxserver/docker-wireguard](https://github.com/linuxserver/docker-wireguard)
+**Docs**: [docs.linuxserver.io/images/docker-wireguard](https://docs.linuxserver.io/images/docker-wireguard/)
 
-#### Init-система: s6-overlay v3
+#### Init system: s6-overlay v3
 
-LinuxServer использует **s6-overlay** с сервис-менеджером `s6-rc`. Порядок загрузки:
+LinuxServer uses **s6-overlay** with the `s6-rc` service manager. Boot order:
 
 ```
 s6-rc.d/
-  init-wireguard-module  (oneshot) → проверяет наличие WG-модуля в ядре
-  init-wireguard-confs   (oneshot) → генерирует/обновляет конфиги
-  svc-coredns            (longrun) → DNS для пиров
-  svc-wireguard          (oneshot) → wg-quick up (WG работает в ядре, не демон)
+  init-wireguard-module  (oneshot) → checks if WG kernel module is loaded
+  init-wireguard-confs   (oneshot) → generates/updates configs
+  svc-coredns            (longrun) → DNS for peers
+  svc-wireguard          (oneshot) → wg-quick up (WG runs in-kernel, not a daemon)
 ```
 
-**Ключевой инсайт**: WireGuard — это **oneshot**, а не longrun-сервис.
-Он работает в ядре, `wg-quick up` только конфигурирует интерфейс и выходит.
-Нет процесса-демона, который нужно мониторить.
+**Key insight**: WireGuard is a **oneshot**, not a longrun service.
+It runs in the kernel — `wg-quick up` configures the interface and exits.
+There is no daemon process to monitor.
 
-#### Генерация конфигов
+#### Config generation
 
-- Шаблоны в `/config/templates/server.conf` и `/config/templates/peer.conf`
-- Ключи хранятся per-peer в `/config/peerN/`
-- IP-адреса назначаются итерацией `.2`–`.254` в подсети
-- Конфиги перегенерируются при изменении env-переменных (сравнение с `/config/.donoteditthisfile`)
-- QR-коды генерируются через `qrencode`
+- Templates in `/config/templates/server.conf` and `/config/templates/peer.conf`
+- Keys stored per-peer in `/config/peerN/`
+- IP addresses assigned by iterating `.2`–`.254` in the subnet
+- Configs regenerated when env vars change (compared against `/config/.donoteditthisfile`)
+- QR codes generated via `qrencode`
 
-#### Capabilities и устройства
+#### Capabilities and devices
 
-| Требование | Обязательность | Зачем |
-|-----------|---------------|-------|
-| `NET_ADMIN` | **Обязательно** | Создание WG-интерфейса, управление маршрутами, iptables |
-| `SYS_MODULE` | Опционально | Загрузка WG kernel-модуля (если не загружен на хосте) |
-| `/dev/net/tun` | **НЕ нужен для WG** | WireGuard использует netlink, а не TUN/TAP. /dev/net/tun нужен OpenVPN |
-| `net.ipv4.conf.all.src_valid_mark=1` | Для клиента | sysctl, нужен в client-mode |
+| Requirement | Required? | Purpose |
+|------------|-----------|---------|
+| `NET_ADMIN` | **Yes** | Create WG interface, manage routes, iptables |
+| `SYS_MODULE` | Optional | Load WG kernel module (if not loaded on host) |
+| `/dev/net/tun` | **Not needed for WG** | WireGuard uses netlink, not TUN/TAP. /dev/net/tun is for OpenVPN |
+| `net.ipv4.conf.all.src_valid_mark=1` | For client mode | sysctl required in client-mode |
 
-**Важное открытие**: `/dev/net/tun` технически **не нужен** для WireGuard!
-WG создаёт интерфейс через `ip link add type wireguard` (netlink API),
-а не через TUN/TAP device. Однако некоторые ядра/конфигурации могут требовать его —
-лучше оставить на всякий случай.
+**Important finding**: `/dev/net/tun` is technically **not needed** for WireGuard.
+WG creates interfaces via `ip link add type wireguard` (netlink API),
+not TUN/TAP. However, some kernels may require it — safer to keep.
 
 #### Graceful shutdown
 
-Скрипт `svc-wireguard/down` → `svc-wireguard/finish`:
+Script `svc-wireguard/down` → `svc-wireguard/finish`:
 ```bash
-# Туннели закрываются в ОБРАТНОМ порядке (tac)
+# Tunnels brought down in REVERSE order (tac)
 for tunnel in $(printf '%s\n' "${WG_CONFS[@]}" | tac ...); do
     wg-quick down "${tunnel}" || :
 done
 ```
 
-#### Пользователь
+#### User model
 
-- Контейнер работает от **root** (WG требует root/NET_ADMIN)
-- `PUID`/`PGID` env vars → создают пользователя `abc` для **владения файлами**
-- WG-операции всегда выполняются от root
+- Container runs as **root** (WG requires root/NET_ADMIN)
+- `PUID`/`PGID` env vars → create user `abc` for **file ownership**
+- WG operations always execute as root
 
-#### Переменные окружения
+#### Environment variables
 
-| Переменная | По умолчанию | Назначение |
-|-----------|-------------|-----------|
-| `PUID` / `PGID` | 1000 | Владелец файлов |
-| `PEERS` | — | Количество/имена пиров (включает режим сервера) |
-| `SERVERURL` | `auto` | Внешний IP (auto = определяется через icanhazip.com) |
-| `SERVERPORT` | `51820` | Внешний WG-порт |
-| `INTERNAL_SUBNET` | `10.13.13.0` | Подсеть VPN |
-| `ALLOWEDIPS` | `0.0.0.0/0, ::/0` | AllowedIPs для пиров |
-| `PERSISTENTKEEPALIVE_PEERS` | — | Keepalive для указанных пиров |
-
----
-
-### 1.2 Выводы для нашего проекта
-
-| Решение linuxserver | Наше решение | Обоснование |
-|--------------------|-------------|------------|
-| s6-overlay | tini + bash | У нас всего 3 сервиса, s6 — overkill. Tini достаточно для zombie reaping и signal forwarding |
-| WG как oneshot | WG как oneshot в entrypoint | Согласуется — WG работает в ядре, не нужен отдельный демон |
-| Генерация конфигов из env | Генерация из env Pelican | Тот же подход, но через Pelican UI вместо docker-compose |
-| PUID/PGID | container (UID 1000) | Pelican стандарт — фиксированный пользователь container |
-| `/dev/net/tun` не нужен | Оставляем в документации | На некоторых хостах может понадобиться, безопаснее оставить |
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PUID` / `PGID` | 1000 | File ownership |
+| `PEERS` | — | Number/names of peers (enables server mode) |
+| `SERVERURL` | `auto` | External IP (auto = detected via icanhazip.com) |
+| `SERVERPORT` | `51820` | External WG port |
+| `INTERNAL_SUBNET` | `10.13.13.0` | VPN subnet |
+| `ALLOWEDIPS` | `0.0.0.0/0, ::/0` | AllowedIPs for peers |
+| `PERSISTENTKEEPALIVE_PEERS` | — | Keepalive for specified peers |
 
 ---
 
-## 2. Docker-образы Nginx + PHP-FPM
+### 1.2 Takeaways for our project
 
-### 2.1 Официальный образ nginx (nginxinc/docker-nginx)
+| linuxserver decision | Our decision | Rationale |
+|---------------------|-------------|-----------|
+| s6-overlay | tini + bash | Only 3 services, s6 is overkill. Tini is enough for zombie reaping and signal forwarding |
+| WG as oneshot | WG as oneshot in entrypoint | Consistent — WG runs in-kernel, no separate daemon needed |
+| Config generation from env | Generation from Pelican env | Same approach, but via Pelican UI instead of docker-compose |
+| PUID/PGID | container (UID 1000) | Pelican standard — fixed user `container` |
+| `/dev/net/tun` not needed | Keep in documentation | Some hosts may require it, safer to keep |
 
-**Репозиторий**: [github.com/nginxinc/docker-nginx](https://github.com/nginxinc/docker-nginx)
+---
+
+## 2. Nginx + PHP-FPM Docker Images
+
+### 2.1 Official nginx (nginxinc/docker-nginx)
+
+**Repository**: [github.com/nginxinc/docker-nginx](https://github.com/nginxinc/docker-nginx)
 
 #### STOPSIGNAL SIGQUIT
 
@@ -106,86 +106,81 @@ STOPSIGNAL SIGQUIT
 CMD ["nginx", "-g", "daemon off;"]
 ```
 
-**Почему SIGQUIT, а не SIGTERM**:
-- `SIGQUIT` → **graceful shutdown**: дожидается завершения обработки текущих запросов
-- `SIGTERM` → **fast shutdown**: обрывает активные соединения
-- Docker отправляет STOPSIGNAL при `docker stop` и ждёт grace period (10s)
-- PHP-FPM тоже использует SIGQUIT для graceful — намеренная унификация
+**Why SIGQUIT instead of SIGTERM**:
+- `SIGQUIT` → **graceful shutdown**: waits for in-flight requests to finish
+- `SIGTERM` → **fast shutdown**: drops active connections
+- Docker sends STOPSIGNAL on `docker stop` and waits for grace period (10s)
+- PHP-FPM also uses SIGQUIT for graceful — intentional alignment
 
-#### Логирование через symlink
+#### Log forwarding via symlink
 
 ```dockerfile
 ln -sf /dev/stdout /var/log/nginx/access.log
 ln -sf /dev/stderr /var/log/nginx/error.log
 ```
 
-Docker ловит stdout/stderr от PID 1. Симлинки позволяют nginx-логам
-попадать в `docker logs` без sidecar'а или volume'а.
+Docker captures stdout/stderr from PID 1. Symlinks route nginx logs
+into `docker logs` without a sidecar or volume.
 
-#### Entrypoint с `/docker-entrypoint.d/`
+#### Entrypoint with `/docker-entrypoint.d/`
 
-Нумерованные скрипты выполняются по порядку перед `exec "$@"`:
+Numbered scripts execute in order before `exec "$@"`:
 
-| Скрипт | Назначение |
-|--------|-----------|
-| `10-listen-on-ipv6-by-default.sh` | Включает IPv6 listen если доступен |
-| `15-local-resolvers.envsh` | Экспортирует DNS-резолверы контейнера |
-| `20-envsubst-on-templates.sh` | `envsubst` на шаблонах из `/etc/nginx/templates/` |
-| `30-tune-worker-processes.sh` | Подстраивает workers под CPU-лимиты cgroup |
+| Script | Purpose |
+|--------|---------|
+| `10-listen-on-ipv6-by-default.sh` | Enable IPv6 listen if available |
+| `15-local-resolvers.envsh` | Export container DNS resolvers |
+| `20-envsubst-on-templates.sh` | `envsubst` on templates from `/etc/nginx/templates/` |
+| `30-tune-worker-processes.sh` | Tune workers to match cgroup CPU limits |
 
-**Важный паттерн**: `.envsh` файлы **sourced** (`. "$f"`), а не executed —
-они могут экспортировать переменные для следующих скриптов.
+**Key pattern**: `.envsh` files are **sourced** (`. "$f"`), not executed —
+they can export variables for subsequent scripts.
 
-#### Worker Process Tuning (cgroup-aware)
+#### Worker process tuning (cgroup-aware)
 
-Скрипт `30-tune-worker-processes.sh` проверяет **5 источников CPU-лимитов**:
-1. Количество online CPU (`getconf _NPROCESSORS_ONLN`)
+Script `30-tune-worker-processes.sh` checks **5 CPU limit sources**:
+1. Online CPU count (`getconf _NPROCESSORS_ONLN`)
 2. cgroup v1 cpuset
 3. cgroup v1 CPU quota
 4. cgroup v2 cpuset
 5. cgroup v2 CPU quota
 
-Берёт **минимум**. Без этого `worker_processes auto` на 64-ядерном хосте
-создаст 64 воркера в контейнере с `--cpus=2`.
+Takes the **minimum**. Without this, `worker_processes auto` on a 64-core
+host would create 64 workers in a container with `--cpus=2`.
 
-#### Temp-директории
+#### Temp directories
 
-Официальный образ: `/var/cache/nginx/` (дефолт)
-LinuxServer/trafex: перемещают в `/tmp/`:
+Official image: `/var/cache/nginx/` (default)
+LinuxServer/trafex: relocate to writable paths.
 
-```nginx
-client_body_temp_path /tmp/client_temp;
-proxy_temp_path /tmp/proxy_temp_path;
-fastcgi_temp_path /tmp/fastcgi_temp;
-```
-
-**Причина**: при запуске от non-root пользователя дефолтные пути не writable.
+**Our approach**: we use `/home/container/tmp/nginx/` — persistent, writable,
+visible in Pelican File Manager. Not `/tmp` (ephemeral) or `/var/cache` (read-only).
 
 ---
 
 ### 2.2 linuxserver/docker-baseimage-alpine-nginx
 
-#### s6-overlay мультипроцесс
+#### s6-overlay multi-process
 
 ```
 s6-rc.d/
-  init-nginx         (oneshot) → копирует дефолты, настраивает resolver, workers
-  init-php           (oneshot) → создаёт php-local.ini, www2.conf
-  init-permissions   (oneshot) → фиксит ownership
-  svc-nginx          (longrun) → nginx-процесс
-  svc-php-fpm        (longrun) → php-fpm процесс
+  init-nginx         (oneshot) → copy defaults, configure resolver, workers
+  init-php           (oneshot) → create php-local.ini, www2.conf
+  init-permissions   (oneshot) → fix ownership
+  svc-nginx          (longrun) → nginx process
+  svc-php-fpm        (longrun) → php-fpm process
 ```
 
-#### Nginx run-скрипт с zombie cleanup
+#### Nginx run script with zombie cleanup
 
 ```bash
 #!/usr/bin/with-contenv bash
-# Убивает зомби nginx-процессы перед стартом
+# Kill zombie nginx processes before start
 if pgrep -f "[n]ginx:" >/dev/null; then
     pkill -ef [n]ginx:
     sleep 1
 fi
-# Если всё ещё живы — SIGKILL
+# If still alive — SIGKILL
 if pgrep -f "[n]ginx:" >/dev/null; then
     pkill -9 -ef [n]ginx:
     sleep 1
@@ -193,22 +188,22 @@ fi
 exec /usr/sbin/nginx -e stderr
 ```
 
-#### PHP-FPM: TCP вместо Unix socket
+#### PHP-FPM: TCP instead of Unix socket
 
 ```nginx
 fastcgi_pass 127.0.0.1:9000;
 ```
 
-**Почему TCP**: проще — нет проблем с permissions на socket-файл,
-нет stale socket после crash'а. Overhead TCP на localhost минимален.
+**Why TCP**: simpler — no socket file permission issues,
+no stale socket after crash. TCP overhead on localhost is minimal.
 
-#### Логирование: реальные файлы + logrotate
+#### Logging: real files + logrotate
 
-В отличие от официального образа, linuxserver пишет в реальные файлы
-в `/config/log/nginx/` и использует logrotate.
-**Причина**: persistent volume `/config` позволяет смотреть логи после пересоздания контейнера.
+Unlike the official image, linuxserver writes to real files in
+`/config/log/nginx/` and uses logrotate.
+**Reason**: persistent volume `/config` lets users inspect logs after container recreation.
 
-#### Конфиги из persistent volume
+#### Configs from persistent volume
 
 ```
 /config/nginx/nginx.conf
@@ -217,78 +212,90 @@ fastcgi_pass 127.0.0.1:9000;
 /config/php/www2.conf
 ```
 
-Дефолты копируются из `/defaults/` **только при первом запуске**.
-Пользователь может кастомизировать всё, и изменения переживут рестарт.
+Defaults copied from `/defaults/` **only on first run**.
+User can customize everything and changes survive restarts.
 
 ---
 
-### 2.3 Официальный php-fpm (docker-library/php)
+### 2.3 Official php-fpm (docker-library/php)
+
+**PHP-FPM** = PHP FastCGI Process Manager. It runs as a separate process
+that manages a pool of PHP worker processes. Nginx cannot execute PHP
+directly — it forwards `.php` requests to FPM via a unix socket or TCP.
+
+**Our image uses PHP 8.1** from Ubuntu 22.04 packages.
 
 #### Socket vs TCP
 
-Дефолт: **TCP 0.0.0.0:9000** (для multi-container архитектуры).
+Default: **TCP 0.0.0.0:9000** (for multi-container architecture).
 
-**Когда Unix socket лучше**:
-- Nginx и PHP-FPM в одном контейнере → socket на ~5-10% быстрее (нет TCP stack)
-- Безопаснее — socket доступен только локально
+**When Unix socket is better**:
+- Nginx and PHP-FPM in the same container → socket is ~5-10% faster (no TCP stack)
+- More secure — socket is only accessible locally
 
-#### Process Management
+**Our approach**: Unix socket at `/home/container/tmp/php-fpm.sock` —
+persistent path, single container, better performance.
 
-| pm режим | Поведение | Когда использовать |
-|---------|----------|-------------------|
-| `static` | Фиксированное число воркеров | Выделенные high-traffic серверы |
-| `dynamic` | Поддерживает spare workers (дефолт) | Общее назначение |
-| `ondemand` | Воркеры только при запросе | Ограниченная RAM, бурстовая нагрузка |
+#### Process management
 
-#### Логирование
+| pm mode | Behavior | Best for |
+|---------|----------|----------|
+| `static` | Fixed number of workers | Dedicated high-traffic servers |
+| `dynamic` | Maintains spare workers (default) | General purpose |
+| `ondemand` | Workers spawned only on request | Low RAM, bursty traffic |
+
+**Our choice**: `ondemand` with `max_children=5` — PHP requests are
+infrequent for static file serving, saves memory when idle.
+
+#### Logging
 
 ```ini
 error_log = /proc/self/fd/2          # stderr
-access.log = /proc/self/fd/2         # тоже stderr (не stdout!)
+access.log = /proc/self/fd/2         # also stderr (NOT stdout!)
 ```
 
-**Почему access.log в stderr, а не stdout**: PHP-FPM закрывает stdout при старте
-(PHP bug #73886). Запись в `/proc/self/fd/1` не работает.
+**Why access.log goes to stderr, not stdout**: PHP-FPM closes stdout on startup
+(PHP bug #73886). Writing to `/proc/self/fd/1` does not work.
 
 #### STOPSIGNAL SIGQUIT
 
-Как и nginx — graceful shutdown. PHP-FPM дожидается завершения текущих запросов.
+Same as nginx — graceful shutdown. PHP-FPM waits for current requests to finish.
 
-#### Конфиг с приоритетом через zz- префикс
+#### Config priority via zz- prefix
 
 ```ini
-# zz-docker.conf — загружается ПОСЛЕДНИМ, перезаписывает всё
+# zz-docker.conf — loaded LAST, overrides everything
 daemonize = no
 ```
 
 ---
 
-### 2.4 Сравнение init-систем для multi-process контейнеров
+### 2.4 Init system comparison for multi-process containers
 
-| Подход | PID 1 | Zombie reaping | Зависимости | Вес | Пример |
-|--------|-------|---------------|-------------|-----|--------|
-| **s6-overlay** | s6-svscan | Да | DAG (s6-rc) | ~5MB | linuxserver |
-| **supervisord** | supervisord | Нет | Нет | ~50MB (Python) | trafex |
-| **tini + bash** | tini | Да | Нет | ~30KB | наш проект |
-| **Два контейнера** | каждый свой | Зависит | Docker Compose | 0 | Docker best practice |
+| Approach | PID 1 | Zombie reaping | Dependencies | Size | Example |
+|----------|-------|---------------|-------------|------|---------|
+| **s6-overlay** | s6-svscan | Yes | DAG (s6-rc) | ~5MB | linuxserver |
+| **supervisord** | supervisord | No | None | ~50MB (Python) | trafex |
+| **tini + bash** | tini | Yes | None | ~30KB | **our project** |
+| **Two containers** | each own | Depends | Docker Compose | 0 | Docker best practice |
 
-#### Почему tini, а не s6-overlay
+#### Why tini, not s6-overlay
 
-1. У нас **3 сервиса** (WG oneshot + nginx + php-fpm) — s6 overkill
-2. Tini корректно reap'ит зомби и пробрасывает сигналы
-3. На 30KB вместо 5MB — меньше attack surface
-4. Проще для пользователей Pelican — понятный bash-скрипт vs s6 DSL
-5. Pelican сам отправляет SIGTERM при остановке — tini пробросит его всем дочерним
+1. Only **3 services** (WG oneshot + nginx + php-fpm) — s6 is overkill
+2. Tini properly reaps zombies and forwards signals
+3. 30KB vs 5MB — smaller attack surface
+4. Simpler for Pelican users — readable bash script vs s6 DSL
+5. Pelican sends SIGTERM on stop — tini forwards to all children
 
-**Компромисс**: если один сервис упадёт (php-fpm), другой (nginx) продолжит работать,
-но будет отдавать 502. Мы решаем это через `wait -n` — если любой процесс завершится,
-entrypoint выходит и Pelican может перезапустить контейнер.
+**Trade-off**: if one service crashes (php-fpm), the other (nginx) would
+continue but return 502 errors. We solve this with `wait -n` — if any
+process exits, the entrypoint exits too and Pelican can restart the container.
 
 ---
 
-### 2.5 Health Check паттерны
+### 2.5 Health check patterns
 
-#### Лучший подход: fpm-ping (проверяет всю цепочку)
+#### Best approach: fpm-ping (validates full chain)
 
 ```ini
 # php-fpm.conf
@@ -300,28 +307,28 @@ location ~ ^/(fpm-status|fpm-ping)$ {
     access_log off;
     allow 127.0.0.1;
     deny all;
-    fastcgi_pass unix:/run/php-fpm.sock;
+    fastcgi_pass unix:/home/container/tmp/php-fpm.sock;
     include fastcgi_params;
     fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
 }
 ```
 
 ```dockerfile
-HEALTHCHECK --timeout=10s CMD curl --silent --fail http://127.0.0.1:8080/fpm-ping || exit 1
+HEALTHCHECK --timeout=10s CMD curl --silent --fail http://127.0.0.1:7890/fpm-ping || exit 1
 ```
 
-**Почему лучший**: проверяет ВСЮ цепочку — nginx слушает, php-fpm отвечает, socket работает.
+**Why best**: validates the FULL chain — nginx listens, php-fpm responds, socket works.
 
 ---
 
-## 3. Pelican/Pterodactyl Eggs — Паттерны и конвенции
+## 3. Pelican/Pterodactyl Eggs — Patterns and Conventions
 
-### 3.1 Каталог eggs
+### 3.1 Egg catalog
 
-**Сайт**: [pelican-eggs.github.io/pelican](https://pelican-eggs.github.io/pelican/)
-**Репозиторий**: [github.com/pelican-eggs/eggs](https://github.com/pelican-eggs/eggs)
+**Website**: [pelican-eggs.github.io/pelican](https://pelican-eggs.github.io/pelican/)
+**Repository**: [github.com/pelican-eggs/eggs](https://github.com/pelican-eggs/eggs)
 
-Каталог содержит **200+ egg'ов** в категориях:
+The catalog contains **200+ eggs** across categories:
 - Game servers (Minecraft, Steam games, standalone)
 - Chatbots (Discord, Twitch, TeamSpeak)
 - Databases (MongoDB, Redis, MariaDB, PostgreSQL)
@@ -330,86 +337,90 @@ HEALTHCHECK --timeout=10s CMD curl --silent --fail http://127.0.0.1:8080/fpm-pin
 - Generic runtimes (Node.js, Python, Java, Go, Rust, etc.)
 - Voice servers (Mumble, TeamSpeak)
 
-### 3.2 Формат egg JSON (PTDL_v2)
+### 3.2 Egg JSON format (PTDL_v2)
 
 ```jsonc
 {
     "_comment": "...",
     "meta": {
-        "version": "PTDL_v2",       // единственная версия формата
-        "update_url": null            // URL для автообновления egg
+        "version": "PTDL_v2",       // only format version
+        "update_url": null            // URL for egg auto-update
     },
     "exported_at": "ISO-8601",
-    "name": "Имя egg",
+    "name": "Egg name",
     "author": "email@example.com",
-    "description": "Описание",
-    "features": null,                 // зарезервировано
+    "description": "Description",
+    "features": null,                 // reserved
     "docker_images": {
         "Display Name": "ghcr.io/org/image:tag"
     },
-    "file_denylist": [],              // файлы, скрытые от File Manager
-    "startup": "команда запуска с {{ПЕРЕМЕННЫМИ}}",
+    "file_denylist": [],              // files hidden from File Manager
+    "startup": "startup command with {{VARIABLES}}",
     "config": {
-        "files": "{}",               // парсинг конфигов (json/yaml/ini/xml/file)
-        "startup": "{\"done\": \"строка в логе означающая готовность\"}",
+        "files": "{}",               // config parsing (json/yaml/ini/xml/file)
+        "startup": "{\"done\": \"log line indicating readiness\"}",
         "logs": "{}",
-        "stop": "^^C"                // команда остановки (^^C = SIGINT)
+        "stop": "^^C"                // stop command (^^C = SIGINT)
     },
     "scripts": {
         "installation": {
-            "script": "bash-скрипт установки",
-            "container": "образ для установки",
+            "script": "bash installation script",
+            "container": "image for installation",
             "entrypoint": "bash"
         }
     },
     "variables": [
         {
-            "name": "Отображаемое имя",
-            "description": "Описание для пользователя",
+            "name": "Display name",
+            "description": "Description for user",
             "env_variable": "UPPER_SNAKE_CASE",
-            "default_value": "значение",
-            "user_viewable": true,    // видна ли пользователю
-            "user_editable": true,    // может ли менять
+            "default_value": "value",
+            "user_viewable": true,    // visible to user
+            "user_editable": true,    // user can modify
             "rules": "required|string|max:64",  // Laravel validation
-            "field_type": "text"      // тип поля в UI
+            "field_type": "text"      // UI field type
         }
     ]
 }
 ```
 
-### 3.3 Двухфазный процесс: Installation vs Runtime
+### 3.3 Two-phase process: Installation vs Runtime
 
-| Фаза | Контейнер | Пользователь | Директория | Назначение |
-|------|-----------|-------------|-----------|-----------|
-| **Installation** | Указан в `scripts.installation.container` | root | `/mnt/server/` | Скачивание, сборка, настройка |
-| **Runtime** | Указан в `docker_images` | container (UID 1000) | `/home/container/` | Запуск сервера |
+| Phase | Container | User | Directory | Purpose |
+|-------|-----------|------|-----------|---------|
+| **Installation** | From `scripts.installation.container` | root | `/mnt/server/` | Download, build, configure |
+| **Runtime** | From `docker_images` | container (UID 1000) | `/home/container/` | Run the server |
 
-**Ключевой момент**: Installation-скрипт пишет в `/mnt/server/`,
-который при runtime маунтится как `/home/container/`.
-Это разные пути, но один и тот же volume.
+**Key point**: Installation script writes to `/mnt/server/`,
+which at runtime is mounted as `/home/container/`.
+Different paths, same volume.
 
-### 3.4 Стандартный entrypoint Pelican
+**Important for Pelican eggs**: Runtime containers are **non-root** (UID 1000).
+System directories (`/etc`, `/run`, `/var/log`) are **read-only**.
+All runtime files must go to `/home/container/` (the persistent volume).
+
+### 3.4 Standard Pelican entrypoint
 
 ```bash
 #!/bin/bash
 cd /home/container
 
-# Подстановка {{ПЕРЕМЕННЫХ}} в STARTUP
+# Substitute {{VARIABLES}} in STARTUP
 MODIFIED_STARTUP=$(echo -e ${STARTUP} | sed -e 's/{{/${/g' -e 's/}}/}/g')
 echo ":/home/container$ ${MODIFIED_STARTUP}"
 
-# Запуск
+# Execute
 eval ${MODIFIED_STARTUP}
 ```
 
-**Паттерн**: egg задаёт `startup` в JSON, Pelican передаёт его в env `STARTUP`,
-entrypoint подставляет переменные и выполняет. Это стандартный подход для простых egg'ов.
+**Pattern**: egg sets `startup` in JSON, Pelican passes it as env `STARTUP`,
+entrypoint substitutes variables and executes. Standard approach for simple eggs.
 
-**Наш случай**: мы НЕ используем этот паттерн, потому что нам нужно:
-1. Запустить WG от root перед основными сервисами
-2. Запустить два процесса (nginx + php-fpm) параллельно
-3. Обработать graceful shutdown
-Поэтому наш entrypoint — кастомный скрипт.
+**Our case**: we do NOT use this pattern because we need to:
+1. Run WG setup before main services
+2. Run two processes (nginx + php-fpm) in parallel
+3. Handle graceful shutdown with SIGQUIT
+Our entrypoint is a custom script.
 
 ### 3.5 Startup detection (done pattern)
 
@@ -417,8 +428,8 @@ entrypoint подставляет переменные и выполняет. Э
 "startup": "{\"done\": \"Listening on \"}"
 ```
 
-Pelican мониторит stdout контейнера и считает сервер запущенным,
-когда видит строку из `done`. Примеры из реальных egg'ов:
+Pelican monitors container stdout and marks the server as running
+when it sees the string from `done`. Examples from real eggs:
 
 | Egg | Done pattern |
 |-----|-------------|
@@ -426,14 +437,14 @@ Pelican мониторит stdout контейнера и считает сер�
 | Gitea | `Listen: ` |
 | Minecraft | `Done (` |
 
-**Наш подход**: `"done": "All services started successfully!"` —
-эту строку выводит наш entrypoint после запуска всех сервисов.
+**Our approach**: `"done": "All services started successfully!"` —
+printed by our entrypoint after all services start.
 
 ### 3.6 Stop signals
 
-- `^^C` → отправляет SIGINT (Ctrl+C) — **самый частый паттерн**
-- `stop` → отправляет команду "stop" в stdin (для Minecraft)
-- `^C` → один SIGINT
+- `^^C` → sends SIGINT (Ctrl+C) — **most common pattern**
+- `stop` → sends "stop" command to stdin (for Minecraft)
+- `^C` → single SIGINT
 
 ### 3.7 Config file parsing
 
@@ -441,118 +452,115 @@ Pelican мониторит stdout контейнера и считает сер�
 "files": "{\"custom/app.ini\": {\"parser\": \"file\", \"find\": {\"SSH_PORT\": \"SSH_PORT: {{server.build.env.SSH_PORT}}\"}}}"
 ```
 
-Поддерживаемые парсеры: `file`, `yaml`, `json`, `xml`, `ini`, `properties`.
-Позволяет Pelican автоматически подставлять переменные в конфиги перед стартом.
+Supported parsers: `file`, `yaml`, `json`, `xml`, `ini`, `properties`.
+Allows Pelican to auto-substitute variables in configs before startup.
 
-**Наш подход**: мы не используем config parsing — подстановка через `sed`
-в entrypoint проще и предсказуемее для нашего случая.
+**Our approach**: we don't use config parsing — `sed` substitution
+in the entrypoint is simpler and more predictable for our case.
 
 ### 3.8 Docker Images (Yolks)
 
-**Репозиторий**: [github.com/pelican-eggs/yolks](https://github.com/pelican-eggs/yolks)
+**Repository**: [github.com/pelican-eggs/yolks](https://github.com/pelican-eggs/yolks)
 
-Yolks — коллекция базовых образов для egg'ов:
+Yolks is a collection of base images for eggs:
 
-| Категория | Примеры | Хостинг |
-|-----------|---------|---------|
+| Category | Examples | Registry |
+|----------|---------|---------|
 | OS | Alpine, Debian, Ubuntu | `ghcr.io/pelican-eggs/yolks:debian` |
 | Runtime | Java 8-25, Node.js 20-24, Python 3.7-3.14 | `ghcr.io/pelican-eggs/yolks:java_21` |
 | Games | Source, Rust, Arma3, Valheim | `ghcr.io/pelican-eggs/games:source` |
 | Installers | Debian, SteamCMD | `ghcr.io/pelican-eggs/installers:debian` |
 | DB | PostgreSQL, MongoDB, MariaDB, Redis | `ghcr.io/pelican-eggs/yolks:postgres_16` |
 
-**Наш подход**: мы используем кастомный образ, потому что ни один yolk
-не содержит WireGuard + Nginx + PHP-FPM.
+**Our approach**: custom image because no yolk contains WireGuard + Nginx + PHP-FPM 8.1.
 
-### 3.9 Переменные — паттерны
+### 3.9 Variable patterns
 
-| Паттерн | Пример env | Пример rules |
+| Pattern | Example env | Example rules |
 |---------|-----------|-------------|
-| Порт | `SERVER_PORT` | `required\|integer\|between:1024,65535` |
-| Пароль | `RCON_PASSWORD` | `required\|string\|max:64` |
-| Версия | `VERSION` | `required\|string\|max:20` |
+| Port | `SERVER_PORT` | `required\|integer\|between:1024,65535` |
+| Password | `RCON_PASSWORD` | `required\|string\|max:64` |
+| Version | `VERSION` | `required\|string\|max:20` |
 | Boolean | `AUTO_UPDATE` | `required\|boolean` |
 | Enum | `DISABLE_SSH` | `required\|string\|in:true,false` |
 | Nullable | `WG_PRIVATE_KEY` | `nullable\|string` |
 
-### 3.10 Installation scripts — паттерны
+### 3.10 Installation script patterns
 
-Общие паттерны из реальных egg'ов:
+Common patterns from real eggs:
 
 ```bash
 #!/bin/ash
-# 1. Установка зависимостей
+# 1. Install dependencies
 apk add --no-cache git curl jq
 
-# 2. Создание директорий
+# 2. Create directories
 mkdir -p /mnt/server
 
-# 3. Скачивание/клонирование
+# 3. Download/clone
 git clone --single-branch --branch ${GIT_BRANCH} ${GIT_URL} /mnt/server
-# или
-curl -sSL "https://github.com/org/repo/releases/download/v${VERSION}/binary" -o /mnt/server/binary
 
-# 4. Установка зависимостей приложения
+# 4. Install app dependencies
 cd /mnt/server && npm install
 
-# 5. Создание дефолтных конфигов
+# 5. Create default configs (don't overwrite existing)
 if [ ! -f /mnt/server/config.json ]; then
     cp /mnt/server/config.example.json /mnt/server/config.json
 fi
 ```
 
-### 3.11 Существующие VPN-egg'и
+### 3.11 Existing VPN eggs
 
-| Проект | Подход | Capabilities |
-|--------|--------|-------------|
-| [Pterodactyl-VPS-Egg](https://github.com/ysdragon/Pterodactyl-VPS-Egg) | Полноценный VPS в контейнере | NET_ADMIN, SYS_MODULE и др. |
+| Project | Approach | Capabilities |
+|---------|----------|-------------|
+| [Pterodactyl-VPS-Egg](https://github.com/ysdragon/Pterodactyl-VPS-Egg) | Full VPS in container | NET_ADMIN, SYS_MODULE, etc. |
 | [Tailscale egg](https://builtbybit.com/resources/pterodactyl-tailscale-vpn-connection-egg.54337/) | Tailscale mesh VPN | NET_ADMIN, NET_RAW |
 
-**Вывод**: прецеденты использования NET_ADMIN в Pelican/Pterodactyl существуют.
-Это не стандартный сценарий, но документированный и рабочий.
+**Conclusion**: precedents for NET_ADMIN in Pelican/Pterodactyl exist.
+Not standard, but documented and working.
 
 ---
 
-## 4. Сводная таблица решений
+## 4. Decision Summary
 
-| Аспект | linuxserver/wg | official nginx | linuxserver/nginx | php-fpm official | **Наш проект** | Обоснование |
-|--------|---------------|---------------|-------------------|-----------------|---------------|------------|
-| Init | s6-overlay | nginx PID 1 | s6-overlay | php-fpm PID 1 | **tini** | Лёгкий, достаточный для 3 сервисов |
-| Signal | s6 управляет | SIGQUIT | s6 управляет | SIGQUIT | **SIGTERM→tini** | Pelican шлёт SIGTERM, tini пробрасывает |
-| Логи | файлы + logrotate | symlink→stdout | файлы + logrotate | stderr | **файлы в /home/container/logs/** | Видны в Pelican File Manager |
-| PHP socket | — | — | TCP 127.0.0.1:9000 | TCP 0.0.0.0:9000 | **Unix socket** | Один контейнер, socket быстрее |
-| Temp dirs | — | /var/cache | /tmp/ | — | **/tmp/** | non-root Nginx |
-| User | root + PUID | nginx (101) | root + abc (PUID) | www-data | **root → container (1000)** | Pelican стандарт |
+| Aspect | linuxserver/wg | official nginx | linuxserver/nginx | php-fpm official | **Our project** | Rationale |
+|--------|---------------|---------------|-------------------|-----------------|---------------|-----------|
+| Init | s6-overlay | nginx PID 1 | s6-overlay | php-fpm PID 1 | **tini** | Lightweight, sufficient for 3 services |
+| Signal | s6 manages | SIGQUIT | s6 manages | SIGQUIT | **SIGQUIT via trap** | Graceful shutdown for nginx + php-fpm |
+| Logs | files + logrotate | symlink→stdout | files + logrotate | stderr | **files in /home/container/logs/** | Visible in Pelican File Manager |
+| PHP socket | — | — | TCP 127.0.0.1:9000 | TCP 0.0.0.0:9000 | **Unix socket** | Single container, socket is faster |
+| Temp dirs | — | /var/cache | /tmp/ | — | **/home/container/tmp/** | Persistent, not ephemeral /tmp |
+| User | root + PUID | nginx (101) | root + abc (PUID) | www-data | **container (UID 1000)** | Pelican standard, non-root |
 | Config | persistent /config | envsubst templates | persistent /config | layered .conf | **persistent /home/container/** | Pelican File Manager |
-| Workers | — | cgroup-aware auto | nproc-based | dynamic pm | **auto + ondemand pm** | Простота, низкий трафик |
-| Health check | Нет | Нет | Нет | Нет | **fpm-ping (TODO)** | Best practice из trafex |
-| WG config | templates + генерация | — | — | — | **генерация из env** | Аналогично linuxserver |
+| Workers | — | cgroup-aware auto | nproc-based | dynamic pm | **auto + ondemand pm** | Simple, low traffic expected |
+| Health check | None | None | None | None | **fpm-ping** | Validates full nginx→php-fpm chain |
+| WG config | templates + gen | — | — | — | **gen from env to /home/container/wg/** | Persistent, visible, like linuxserver |
+| PHP version | — | — | auto | multiple tags | **8.1 (Ubuntu 22.04)** | LTS, stable |
 
 ---
 
-## 5. TODO — что стоит добавить на основе ресёрча
+## 5. Implementation status
 
-На основании исследования, следующие улучшения стоит внести в проект:
+Based on research, these improvements have been implemented:
 
-### Высокий приоритет
-- [ ] **STOPSIGNAL SIGQUIT** в Dockerfile для nginx и php-fpm graceful shutdown
-- [ ] **Health check** через fpm-ping (проверяет всю цепочку nginx→php-fpm)
-- [ ] **sysctl `net.ipv4.conf.all.src_valid_mark=1`** — нужен для WG client mode
-- [ ] **Temp directories** в `/tmp/` для non-root nginx
+### Done
+- [x] Health check via fpm-ping (validates nginx→php-fpm→socket chain)
+- [x] sysctl `net.ipv4.conf.all.src_valid_mark=1` for WG client mode
+- [x] Zombie cleanup before nginx/php-fpm start (linuxserver pattern)
+- [x] SIGQUIT for graceful shutdown of nginx and php-fpm
+- [x] All runtime files in /home/container/ (persistent, no /tmp)
+- [x] PHP-FPM catch_workers_output, decorate_workers_output
+- [x] Default page restoration if user deletes configs
 
-### Средний приоритет
-- [ ] **nginx -s reload** — документировать как перезагрузить конфиг без рестарта
-- [ ] **Zombie cleanup** перед стартом nginx (паттерн linuxserver)
-- [ ] **`zz-docker.conf`** для PHP-FPM чтобы гарантировать `daemonize = no`
-
-### Низкий приоритет
-- [ ] **envsubst** для nginx templates (вместо sed)
-- [ ] **Worker process tuning** с учётом cgroup лимитов
-- [ ] **QR-code** генерация для WG-конфигов
+### Not implemented (low priority)
+- [ ] envsubst for nginx templates (sed works fine)
+- [ ] Worker process tuning with cgroup limits
+- [ ] QR-code generation for WG configs
+- [ ] nginx -s reload documentation (config reload without restart)
 
 ---
 
-## Источники
+## Sources
 
 - [linuxserver/docker-wireguard](https://github.com/linuxserver/docker-wireguard)
 - [docs.linuxserver.io/images/docker-wireguard](https://docs.linuxserver.io/images/docker-wireguard/)

@@ -1,13 +1,13 @@
-# Wings — Настройка config.yml для этого egg
+# Wings — config.yml Setup for This Egg
 
-WireGuard внутри Docker-контейнера требует специальных привилегий,
-которые Wings по умолчанию не выдаёт.
+WireGuard inside a Docker container requires special privileges
+that Wings does not grant by default.
 
-## Что нужно изменить
+## What Needs to Be Changed
 
-Файл: `/etc/pelican/config.yml` (на Unraid: `/mnt/user/appdata/pelican/config.yml` или аналогичный путь в зависимости от установки)
+File: `/etc/pelican/config.yml` (on Unraid: `/mnt/user/appdata/pelican/config.yml` or a similar path depending on your installation)
 
-### Добавить NET_ADMIN capability
+### Add the NET_ADMIN Capability
 
 ```yaml
 docker:
@@ -15,11 +15,11 @@ docker:
     - NET_ADMIN
 ```
 
-**Зачем**: WireGuard использует системный вызов `ioctl` и netlink для создания
-сетевого интерфейса `wg0`. Без `NET_ADMIN` контейнер не может создавать
-сетевые интерфейсы, менять маршруты и настраивать firewall-правила.
+**Why**: WireGuard uses the `ioctl` system call and netlink to create
+the `wg0` network interface. Without `NET_ADMIN` the container cannot create
+network interfaces, modify routes, or configure firewall rules.
 
-### Добавить /dev/net/tun device
+### Add the /dev/net/tun Device
 
 ```yaml
 docker:
@@ -27,11 +27,11 @@ docker:
     - /dev/net/tun
 ```
 
-**Зачем**: `/dev/net/tun` — это character device для создания TUN/TAP интерфейсов.
-WireGuard создаёт через него виртуальный сетевой интерфейс для туннеля.
-Без этого устройства `wg-quick up` упадёт с ошибкой.
+**Why**: `/dev/net/tun` is a character device used to create TUN/TAP interfaces.
+WireGuard uses it to create a virtual network interface for the tunnel.
+Without this device, `wg-quick up` will fail with an error.
 
-### Полный пример секции docker
+### Full Example of the docker Section
 
 ```yaml
 docker:
@@ -59,35 +59,35 @@ docker:
     default:
       memory: 0
       cpu: 0
-  # === ДОБАВИТЬ ДЛЯ WIREGUARD ===
+  # === ADD FOR WIREGUARD ===
   allowed_capabilities:
     - NET_ADMIN
   allowed_devices:
     - /dev/net/tun
 ```
 
-## После изменения
+## After Making Changes
 
 ```bash
 sudo systemctl restart wings
 ```
 
-## Безопасность
+## Security
 
-**NET_ADMIN** — это мощная capability. Она позволяет контейнеру:
-- Создавать/удалять сетевые интерфейсы
-- Менять маршруты и firewall-правила
-- Включать promiscuous mode
+**NET_ADMIN** is a powerful capability. It allows the container to:
+- Create/delete network interfaces
+- Modify routes and firewall rules
+- Enable promiscuous mode
 
-Это **глобальная** настройка Wings — она разрешает NET_ADMIN для **всех** серверов на этой ноде.
+This is a **global** Wings setting -- it enables NET_ADMIN for **all** servers on this node.
 
-Рекомендации:
-- Если на ноде есть серверы от недоверенных пользователей — выдели отдельную ноду для WG-контейнеров
-- Или используй отдельный инстанс Wings с этой настройкой
+Recommendations:
+- If the node hosts servers from untrusted users, dedicate a separate node for WG containers
+- Or run a separate Wings instance with this configuration
 
-## Проверка
+## Verification
 
-После запуска сервера в Pelican, в логах контейнера должно быть:
+After starting the server in Pelican, the container logs should show:
 ```
 [INFO] Starting WireGuard...
 [INFO] WireGuard is up. Interface status:
@@ -97,17 +97,25 @@ interface: wg0
   listening port: <...>
 ```
 
-Если видишь ошибку `RTNETLINK answers: Operation not permitted` — capability не применилась.
-Если видишь `Cannot open /dev/net/tun` — устройство не подключено.
+If you see `RTNETLINK answers: Operation not permitted` -- the capability was not applied.
+If you see `Cannot open /dev/net/tun` -- the device was not attached.
 
-## Примечание: запуск от root
+## Note: PHP 8.1 Requirement
 
-WireGuard (wg-quick) требует root для полноценной работы. Pelican/Wings по умолчанию
-запускает контейнеры от `container` (UID 1000).
+This egg uses **PHP 8.1** (php8.1-fpm). Make sure the base image or system packages
+include the `php8.1-fpm` package. The PHP-FPM pool is configured to listen on a Unix
+socket at `/home/container/tmp/php-fpm.sock` and runs under the `container` user.
 
-Наш entrypoint обрабатывает оба случая:
-- **Если root**: WireGuard работает полностью
-- **Если UID 1000**: nginx + php-fpm работают, WG может не запуститься (зависит от capability)
+## Note: Container User and UID
 
-Для полной поддержки WG убедись, что Wings не переопределяет пользователя контейнера,
-или настрой egg с `force_outgoing_ip` и необходимыми capabilities.
+Pelican/Wings runs containers as the `container` user (**UID 1000**, non-root) by default.
+All runtime paths (PID files, sockets, Nginx temp directories) are placed under
+`/home/container/tmp/` so they are writable without root privileges.
+
+Our entrypoint handles both cases:
+- **If root**: WireGuard works fully (wg-quick requires root for netlink operations)
+- **If UID 1000 (non-root)**: Nginx + PHP-FPM work normally; WG may fail to start
+  depending on whether the NET_ADMIN capability is granted
+
+For full WG support, make sure Wings does not override the container user,
+or configure the egg with `force_outgoing_ip` and the required capabilities.
