@@ -83,7 +83,7 @@ WORKDIR /home/container
 # Ref: trafex/docker-php-nginx — fpm-ping лучший паттерн.
 # =============================================================================
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl --silent --fail http://127.0.0.1:${SERVER_PORT:-8080}/fpm-ping || exit 1
+    CMD curl --silent --fail http://127.0.0.1:${SERVER_PORT:-7890}/fpm-ping || exit 1
 
 # =============================================================================
 # Tini как PID 1.

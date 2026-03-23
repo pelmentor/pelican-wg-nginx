@@ -166,12 +166,12 @@ log_step "Configuring Nginx and PHP-FPM..."
 log_info "Port env: SERVER_PORT=${SERVER_PORT:-<unset>}, P_SERVER_PORT=${P_SERVER_PORT:-<unset>}, SERVER_IP=${SERVER_IP:-<unset>}"
 
 # Resolve the actual port — try multiple Pelican env var names
-SERVER_PORT="${SERVER_PORT:-${P_SERVER_PORT:-8080}}"
+SERVER_PORT="${SERVER_PORT:-${P_SERVER_PORT:-7890}}"
 
-# If Pelican passed 0 (no allocation), fall back to 8080
+# If Pelican passed 0 (no allocation), fall back to 7890
 if [ "$SERVER_PORT" = "0" ] || [ -z "$SERVER_PORT" ]; then
-    log_warn "SERVER_PORT is 0 or empty — defaulting to 8080"
-    SERVER_PORT=8080
+    log_warn "SERVER_PORT is 0 or empty — defaulting to 7890"
+    SERVER_PORT=7890
 fi
 
 # Определяем версию PHP автоматически (8.1 на Ubuntu 22.04)
