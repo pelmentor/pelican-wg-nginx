@@ -74,9 +74,11 @@ done
 # Installation script создаёт их в /mnt/server, но при первом запуске
 # Docker image может стартануть без install phase (если образ уже содержит всё).
 mkdir -p /home/container/{webroot,wg,nginx,php,logs,tmp}
-# /run is read-only in Pelican containers — use /tmp for runtime files
+# /run is read-only in Pelican containers (by design).
+# PID files and unix sockets are ephemeral — /tmp is the correct location.
+# Ref: trafex/docker-php-nginx uses the same approach.
 mkdir -p /tmp/nginx /tmp/php /tmp/run-nginx
-chown -R container:container /home/container /tmp/nginx /tmp/php /tmp/run-nginx 2>/dev/null || true
+chown -R container:container /home/container /tmp/nginx /tmp/php /tmp/run-nginx
 
 # Дефолтная страница если webroot пуст
 if [ ! -f /home/container/webroot/index.html ] && [ -z "$(ls -A /home/container/webroot/ 2>/dev/null)" ]; then
