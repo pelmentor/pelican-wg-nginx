@@ -2,11 +2,11 @@
 
 class UserController {
     /**
-     * GET /users — render the users management page (admin only).
+     * GET /admin/users — render the users management page (admin only).
      */
     public function index(): void {
         Permission::requirePerm(Auth::getCurrentRole(), 'users.manage');
-        $page = 'users';
+        $page = 'admin_users';
         require __DIR__ . '/../View/layout.php';
     }
 

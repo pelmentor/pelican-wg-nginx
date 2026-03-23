@@ -22,6 +22,8 @@ require __DIR__ . '/../src/Controller/FilesController.php';
 require __DIR__ . '/../src/Controller/SettingsController.php';
 require __DIR__ . '/../src/Controller/ActivityController.php';
 require __DIR__ . '/../src/Controller/UserController.php';
+require __DIR__ . '/../src/Controller/AdminPanelController.php';
+require __DIR__ . '/../src/Controller/AdminLogsController.php';
 
 // Opportunistic rate-limit file cleanup
 RateLimit::cleanup();
@@ -56,13 +58,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Auth::verifyCsrf();
 }
 
-// Pages
+// ═══ Client Area Pages ═══
 $router->get('/', [DashboardController::class, 'index']);
 $router->get('/console', [ConsoleController::class, 'index']);
 $router->get('/files', [FilesController::class, 'index']);
 $router->get('/settings', [SettingsController::class, 'index']);
 $router->get('/activity', [ActivityController::class, 'index']);
-$router->get('/users', [UserController::class, 'index']);
+
+// ═══ Admin Area Pages (admin role only) ═══
+$router->get('/admin/users', [UserController::class, 'index']);
+$router->get('/admin/panel', [AdminPanelController::class, 'index']);
+$router->get('/admin/logs', [AdminLogsController::class, 'index']);
 
 // API — Dashboard
 $router->get('/api/stats', [DashboardController::class, 'stats']);
@@ -103,6 +109,12 @@ $router->post('/api/users', [UserController::class, 'create']);
 $router->post('/api/users/update', [UserController::class, 'update']);
 $router->post('/api/users/delete', [UserController::class, 'delete']);
 $router->post('/api/users/password', [UserController::class, 'changePassword']);
+
+// API — Admin Panel
+$router->get('/api/admin/panel/info', [AdminPanelController::class, 'info']);
+
+// API — Admin Logs
+$router->get('/api/admin/logs', [AdminLogsController::class, 'getLogs']);
 
 // Dispatch
 $router->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

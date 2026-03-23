@@ -12,12 +12,13 @@ class Permission {
             'files.delete',
             'settings.view',
             'logs.view',
+            'activity.view',
         ],
         'viewer'   => [
             'dashboard.view',
             'console.read',
             'files.read',
-            'logs.view',
+            'activity.view',
         ],
     ];
 

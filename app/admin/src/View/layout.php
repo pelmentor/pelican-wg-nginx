@@ -1,11 +1,15 @@
-<?php $currentUser = Auth::getCurrentUser(); ?>
+<?php
+$currentUser = Auth::getCurrentUser();
+$isAdminArea = str_starts_with($page, 'admin_');
+$isAdmin = $currentUser && $currentUser['role'] === 'admin';
+?>
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= Auth::csrfToken() ?>">
-    <title>WG-Nginx Admin</title>
+    <title><?= $isAdminArea ? 'WG-Nginx Admin' : 'WG-Nginx' ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -33,12 +37,12 @@
                             900: '#1e3a8a',
                         },
                         panel: {
-                            bg:      '#030712',  // gray-950
-                            sidebar: '#111827',  // gray-900
-                            card:    '#111827',  // gray-900
-                            surface: '#030712',  // gray-950
-                            border:  '#1f2937',  // gray-800
-                            hover:   '#1f2937',  // gray-800
+                            bg:      '#030712',
+                            sidebar: '#111827',
+                            card:    '#111827',
+                            surface: '#030712',
+                            border:  '#1f2937',
+                            hover:   '#1f2937',
                         },
                     },
                 },
@@ -62,6 +66,15 @@
     <aside id="sidebar" class="fixed top-0 left-0 z-50 w-64 bg-panel-sidebar border-r border-panel-border flex flex-col h-screen transition-transform duration-200 -translate-x-full lg:translate-x-0">
         <!-- Logo -->
         <div class="h-16 flex items-center gap-3 px-5 border-b border-panel-border shrink-0">
+            <?php if ($isAdminArea): ?>
+            <div class="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center">
+                <svg class="w-4.5 h-4.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                </svg>
+            </div>
+            <span class="text-base font-semibold text-white tracking-tight">WG-Nginx</span>
+            <span class="ml-1 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30 rounded">Admin</span>
+            <?php else: ?>
             <div class="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center">
                 <svg class="w-4.5 h-4.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/>
@@ -69,10 +82,52 @@
                 </svg>
             </div>
             <span class="text-base font-semibold text-white tracking-tight">WG-Nginx</span>
+            <?php endif; ?>
         </div>
 
         <!-- Navigation -->
         <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+            <?php if ($isAdminArea): ?>
+            <!-- ═══ Admin Area Navigation ═══ -->
+            <a href="/admin/users"
+               class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150
+                      <?= $page === 'admin_users' ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-gray-400 hover:text-white hover:bg-white/5' ?>">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>
+                </svg>
+                Users
+            </a>
+            <a href="/admin/panel"
+               class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150
+                      <?= $page === 'admin_panel' ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-gray-400 hover:text-white hover:bg-white/5' ?>">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/>
+                </svg>
+                Panel Settings
+            </a>
+            <a href="/admin/logs"
+               class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150
+                      <?= $page === 'admin_logs' ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-gray-400 hover:text-white hover:bg-white/5' ?>">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+                </svg>
+                System Logs
+            </a>
+
+            <!-- Divider -->
+            <div class="my-3 border-t border-panel-border"></div>
+
+            <!-- Back to Panel -->
+            <a href="/"
+               class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors duration-150">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/>
+                </svg>
+                Back to Panel
+            </a>
+
+            <?php else: ?>
+            <!-- ═══ Client Area Navigation ═══ -->
             <a href="/"
                class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150
                       <?= $page === 'dashboard' ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-gray-400 hover:text-white hover:bg-white/5' ?>">
@@ -114,15 +169,20 @@
                 </svg>
                 Activity
             </a>
-            <?php if ($currentUser && $currentUser['role'] === 'admin'): ?>
-            <a href="/users"
-               class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150
-                      <?= $page === 'users' ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-gray-400 hover:text-white hover:bg-white/5' ?>">
+
+            <?php if ($isAdmin): ?>
+            <!-- Divider -->
+            <div class="my-3 border-t border-panel-border"></div>
+
+            <!-- Open in Admin -->
+            <a href="/admin/users"
+               class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-red-400/5 transition-colors duration-150">
                 <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                 </svg>
-                Users
+                Open Admin Area
             </a>
+            <?php endif; ?>
             <?php endif; ?>
         </nav>
 
@@ -130,7 +190,7 @@
         <div class="px-3 py-4 border-t border-panel-border shrink-0">
             <?php if ($currentUser): ?>
             <div class="flex items-center gap-3 px-3 py-2 mb-1">
-                <div class="w-7 h-7 rounded-full bg-primary-600/20 flex items-center justify-center text-xs font-medium text-primary-400 uppercase"><?= htmlspecialchars(substr($currentUser['username'], 0, 1)) ?></div>
+                <div class="w-7 h-7 rounded-full <?= $isAdminArea ? 'bg-red-600/20 text-red-400' : 'bg-primary-600/20 text-primary-400' ?> flex items-center justify-center text-xs font-medium uppercase"><?= htmlspecialchars(substr($currentUser['username'], 0, 1)) ?></div>
                 <div class="flex-1 min-w-0">
                     <div class="text-sm font-medium text-white truncate"><?= htmlspecialchars($currentUser['username']) ?></div>
                     <div class="text-xs text-gray-500 capitalize"><?= htmlspecialchars($currentUser['role']) ?></div>
@@ -167,6 +227,9 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7"/>
                         </svg>
                         <span class="text-sm font-medium text-white">WG-Nginx</span>
+                        <?php if ($isAdminArea): ?>
+                        <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30 rounded">Admin</span>
+                        <?php endif; ?>
                     </div>
 
                     <!-- Status -->
@@ -222,8 +285,12 @@
     <script src="/assets/js/settings.js"></script>
     <?php elseif ($page === 'activity'): ?>
     <script src="/assets/js/activity.js"></script>
-    <?php elseif ($page === 'users'): ?>
-    <script src="/assets/js/users.js"></script>
+    <?php elseif ($page === 'admin_users'): ?>
+    <script src="/assets/js/admin_users.js"></script>
+    <?php elseif ($page === 'admin_panel'): ?>
+    <script src="/assets/js/admin_panel.js"></script>
+    <?php elseif ($page === 'admin_logs'): ?>
+    <script src="/assets/js/admin_logs.js"></script>
     <?php endif; ?>
 </body>
 </html>
