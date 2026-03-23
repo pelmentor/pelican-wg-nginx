@@ -55,10 +55,10 @@ RUN mkdir -p \
     /home/container/{webroot,wg,nginx,php,logs,tmp} \
     /defaults \
     /var/lib/nginx/{body,proxy,fastcgi} \
-    /run/nginx /run/php /tmp/nginx \
+    /tmp/nginx /tmp/php /tmp/run-nginx \
     && chown -R container:container \
     /home/container /var/lib/nginx /var/log/nginx \
-    /run/nginx /run/php /tmp/nginx
+    /tmp/nginx /tmp/php /tmp/run-nginx
 
 # Конфиги: копируем И в /home/container (рабочие), И в /defaults (бэкап)
 COPY nginx.conf /defaults/nginx.conf

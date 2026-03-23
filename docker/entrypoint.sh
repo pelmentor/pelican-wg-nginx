@@ -74,8 +74,9 @@ done
 # Installation script создаёт их в /mnt/server, но при первом запуске
 # Docker image может стартануть без install phase (если образ уже содержит всё).
 mkdir -p /home/container/{webroot,wg,nginx,php,logs,tmp}
-mkdir -p /run/php /run/nginx /tmp/nginx
-chown -R container:container /home/container /run/php /run/nginx /tmp/nginx
+# /run is read-only in Pelican containers — use /tmp for runtime files
+mkdir -p /tmp/nginx /tmp/php /tmp/run-nginx
+chown -R container:container /home/container /tmp/nginx /tmp/php /tmp/run-nginx 2>/dev/null || true
 
 # Дефолтная страница если webroot пуст
 if [ ! -f /home/container/webroot/index.html ] && [ -z "$(ls -A /home/container/webroot/ 2>/dev/null)" ]; then
@@ -162,7 +163,7 @@ SERVER_PORT="${SERVER_PORT:-8080}"
 # Определяем версию PHP автоматически (8.1 на Ubuntu 22.04)
 PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
 PHP_FPM_BIN="/usr/sbin/php-fpm${PHP_VERSION}"
-PHP_FPM_SOCK="/run/php/php-fpm.sock"
+PHP_FPM_SOCK="/tmp/php/php-fpm.sock"
 
 # Копируем дефолтные конфиги если пользователь их удалил через File Manager
 if [ ! -f /home/container/nginx/nginx.conf ]; then
