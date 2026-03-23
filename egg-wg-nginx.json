@@ -8,7 +8,7 @@
     "name": "WireGuard + Nginx + PHP-FPM",
     "author": "pelmentor@github.com",
     "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    "description": "Nginx + PHP 8.1 FPM web server with a WireGuard VPN client. Ubuntu 22.04 base. Data can be delivered over a WG tunnel from a remote host.",
+    "description": "Nginx + PHP 8.1 FPM (curl, gd, mbstring, zip) web server with WireGuard VPN client. Ubuntu 22.04. Default port: 7890. WG is optional — leave keys empty for a plain web server.",
     "features": null,
     "docker_images": {
         "WG + Nginx + PHP-FPM": "ghcr.io/pelmentor/pelican-wg-nginx:latest"
@@ -93,6 +93,17 @@
             "user_editable": true,
             "rules": "required|string",
             "sort": 6,
+            "field_type": "text"
+        },
+        {
+            "name": "Peer Preshared Key",
+            "description": "Optional preshared key for extra encryption. Must match the peer's config. Leave empty if not used.",
+            "env_variable": "WG_PRESHARED_KEY",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "sort": 7,
             "field_type": "text"
         }
     ]
