@@ -6,13 +6,38 @@ const AdminPanel = {
     ENV_COLLAPSED_LIMIT: 15,
 
     async load() {
-        const data = await api.get('/api/admin/panel/info');
+        // Load system info and panel settings in parallel
+        const [data, settings] = await Promise.all([
+            api.get('/api/admin/panel/info'),
+            api.get('/api/admin/panel/settings'),
+        ]);
         if (!data || data.error) {
             Toast.error('Failed to load system information');
             return;
         }
         this.data = data;
         this.render();
+
+        // Populate settings fields
+        if (settings) {
+            document.getElementById('setting-server-name').value = settings.server_name || '';
+            document.getElementById('setting-server-address').value = settings.server_address || '';
+        }
+    },
+
+    async saveSettings() {
+        const name = document.getElementById('setting-server-name').value.trim();
+        const address = document.getElementById('setting-server-address').value.trim();
+
+        const result = await api.post('/api/admin/panel/settings', {
+            server_name: name || 'WG-Nginx',
+            server_address: address,
+        });
+        if (result?.success) {
+            Toast.success('Panel settings saved. Reload to see changes in header.');
+        } else {
+            Toast.error('Failed to save: ' + (result?.error || 'Unknown error'));
+        }
     },
 
     render() {

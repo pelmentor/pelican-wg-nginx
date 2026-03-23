@@ -85,6 +85,23 @@ async function updateStats() {
         prevNetwork = { rx_bytes: rxBytes, tx_bytes: txBytes };
         prevTime = now;
 
+        // ── WireGuard details ──
+        const wg = data.wireguard;
+        if (wg) {
+            setText('wg-addr', wg.address || '--');
+            setText('wg-endpoint', wg.endpoint || '--');
+            setText('wg-handshake', wg.last_handshake || '--');
+            const transfer = (wg.transfer_rx && wg.transfer_tx)
+                ? '\u2193' + wg.transfer_rx + ' \u2191' + wg.transfer_tx
+                : '--';
+            setText('wg-transfer', transfer);
+        } else {
+            setText('wg-addr', 'Not active');
+            setText('wg-endpoint', '--');
+            setText('wg-handshake', '--');
+            setText('wg-transfer', '--');
+        }
+
         // ── Uptime (header) ──
         if (data.uptime) {
             const uptimeStr = formatUptimeShort(data.uptime);

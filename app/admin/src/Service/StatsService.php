@@ -13,7 +13,51 @@ class StatsService {
                 'php-fpm' => $this->isRunning('php-fpm'),
                 'wireguard' => file_exists('/sys/class/net/wg0'),
             ],
+            'wireguard' => $this->getWireguardDetails(),
         ];
+    }
+
+    /**
+     * Get detailed WireGuard info: address, endpoint, last handshake, transfer.
+     * Returns null if WG is not active.
+     */
+    private function getWireguardDetails(): ?array {
+        if (!file_exists('/sys/class/net/wg0')) return null;
+
+        $output = @shell_exec('sudo wg show wg0 2>&1') ?? '';
+        if (empty($output) || str_contains($output, 'not found')) return null;
+
+        $details = [
+            'address'        => '',
+            'endpoint'       => '',
+            'last_handshake' => '',
+            'transfer_rx'    => 0,
+            'transfer_tx'    => 0,
+            'peer'           => '',
+        ];
+
+        // Address from config file
+        $conf = @file_get_contents(USER_CONFIG_DIR . '/wg0.conf');
+        if ($conf && preg_match('/Address\s*=\s*(.+)/i', $conf, $m)) {
+            $details['address'] = trim($m[1]);
+        }
+
+        // Parse wg show output
+        if (preg_match('/endpoint:\s*(\S+)/i', $output, $m)) {
+            $details['endpoint'] = $m[1];
+        }
+        if (preg_match('/latest handshake:\s*(.+)/i', $output, $m)) {
+            $details['last_handshake'] = trim($m[1]);
+        }
+        if (preg_match('/transfer:\s*([\d.]+\s*\S+)\s+received,\s*([\d.]+\s*\S+)\s+sent/i', $output, $m)) {
+            $details['transfer_rx'] = $m[1];
+            $details['transfer_tx'] = $m[2];
+        }
+        if (preg_match('/peer:\s*(\S+)/i', $output, $m)) {
+            $details['peer'] = substr($m[1], 0, 8) . '...';
+        }
+
+        return $details;
     }
 
     private function getCpu(): array {

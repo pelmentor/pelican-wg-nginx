@@ -2,6 +2,9 @@
 $currentUser = Auth::getCurrentUser();
 $isAdminArea = str_starts_with($page, 'admin_');
 $isAdmin = $currentUser && $currentUser['role'] === 'admin';
+$panelSettings = getPanelSettings();
+$serverName = htmlspecialchars($panelSettings['server_name'] ?: 'WG-Nginx');
+$serverAddress = $panelSettings['server_address'] ?: ($_SERVER['HTTP_HOST'] ?? '0.0.0.0');
 ?>
 <!DOCTYPE html>
 <html lang="en" class="dark">
@@ -9,7 +12,7 @@ $isAdmin = $currentUser && $currentUser['role'] === 'admin';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= Auth::csrfToken() ?>">
-    <title><?= $isAdminArea ? 'WG-Nginx Admin' : 'WG-Nginx' ?></title>
+    <title><?= $isAdminArea ? $serverName . ' Admin' : $serverName ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -72,7 +75,7 @@ $isAdmin = $currentUser && $currentUser['role'] === 'admin';
                     <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                 </svg>
             </div>
-            <span class="text-base font-semibold text-white tracking-tight">WG-Nginx</span>
+            <span class="text-base font-semibold text-white tracking-tight"><?= $serverName ?></span>
             <span class="ml-1 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30 rounded">Admin</span>
             <?php else: ?>
             <div class="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center">
@@ -81,7 +84,7 @@ $isAdmin = $currentUser && $currentUser['role'] === 'admin';
                     <circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="8" cy="16" r="1" fill="currentColor"/>
                 </svg>
             </div>
-            <span class="text-base font-semibold text-white tracking-tight">WG-Nginx</span>
+            <span class="text-base font-semibold text-white tracking-tight"><?= $serverName ?></span>
             <?php endif; ?>
         </div>
 
@@ -226,7 +229,7 @@ $isAdmin = $currentUser && $currentUser['role'] === 'admin';
                         <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7"/>
                         </svg>
-                        <span class="text-sm font-medium text-white">WG-Nginx</span>
+                        <span class="text-sm font-medium text-white"><?= $serverName ?></span>
                         <?php if ($isAdminArea): ?>
                         <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30 rounded">Admin</span>
                         <?php endif; ?>
@@ -246,7 +249,7 @@ $isAdmin = $currentUser && $currentUser['role'] === 'admin';
                         <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418"/>
                         </svg>
-                        <span id="header-address" class="text-sm font-mono text-gray-300"><?= $_SERVER['HTTP_HOST'] ?? '0.0.0.0' ?></span>
+                        <span id="header-address" class="text-sm font-mono text-gray-300"><?= htmlspecialchars($serverAddress) ?></span>
                     </div>
                 </div>
             </div>

@@ -83,51 +83,71 @@
 <!-- Service Status Row -->
 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
     <!-- Nginx -->
-    <div class="bg-panel-card border border-panel-border rounded-xl p-4 flex items-center gap-4 transition-shadow duration-200 hover:shadow-lg hover:shadow-black/20">
-        <div class="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center shrink-0">
-            <svg class="w-5 h-5 text-green-400" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2L2 19.5h20L12 2zm0 4l7 13H5l7-13z" opacity="0.9"/>
-            </svg>
+    <div class="bg-panel-card border border-panel-border rounded-xl p-4 transition-shadow duration-200 hover:shadow-lg hover:shadow-black/20">
+        <div class="flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5 text-green-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L2 19.5h20L12 2zm0 4l7 13H5l7-13z" opacity="0.9"/>
+                </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-white">Nginx</div>
+                <div class="text-xs text-gray-500" id="status-nginx-text">Checking...</div>
+            </div>
+            <span id="status-nginx" class="relative flex h-2.5 w-2.5 shrink-0">
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-600"></span>
+            </span>
         </div>
-        <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium text-white">Nginx</div>
-            <div class="text-xs text-gray-500" id="status-nginx-text">Checking...</div>
+        <div class="mt-3 pt-3 border-t border-gray-800/50 grid grid-cols-2 gap-2">
+            <div><span class="text-[10px] text-gray-600 uppercase">User Port</span><div class="text-xs font-mono text-gray-400"><?= getenv('USER_PORT') ?: '7890' ?></div></div>
+            <div><span class="text-[10px] text-gray-600 uppercase">Admin Port</span><div class="text-xs font-mono text-gray-400"><?= getenv('ADMIN_PORT') ?: '9876' ?></div></div>
         </div>
-        <span id="status-nginx" class="relative flex h-2.5 w-2.5 shrink-0">
-            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-600"></span>
-        </span>
     </div>
 
     <!-- PHP-FPM -->
-    <div class="bg-panel-card border border-panel-border rounded-xl p-4 flex items-center gap-4 transition-shadow duration-200 hover:shadow-lg hover:shadow-black/20">
-        <div class="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center shrink-0">
-            <svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M7.01 10.207h-.944l-.515 2.648h.838c.556 0 .97-.105 1.242-.314.272-.21.455-.559.55-1.049.092-.47.05-.802-.124-.995-.175-.193-.523-.29-1.047-.29zM12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm3.003 8.076c.146.218.2.497.16.836l-.07.385c-.09.465-.263.849-.518 1.152a2.243 2.243 0 01-.982.691v.026c.399.13.655.378.77.744.114.367.087.838-.082 1.414l-.172.596c-.06.21-.09.399-.09.566l-.015.166h-1.43l.012-.128.035-.315c.02-.146.06-.345.125-.594l.184-.67c.115-.437.1-.735-.05-.893-.148-.158-.456-.237-.924-.237H10.54l-.616 3.164H8.51l1.748-8.978h3.076c.736 0 1.267.113 1.594.34l.075.06z"/>
-            </svg>
+    <div class="bg-panel-card border border-panel-border rounded-xl p-4 transition-shadow duration-200 hover:shadow-lg hover:shadow-black/20">
+        <div class="flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7.01 10.207h-.944l-.515 2.648h.838c.556 0 .97-.105 1.242-.314.272-.21.455-.559.55-1.049.092-.47.05-.802-.124-.995-.175-.193-.523-.29-1.047-.29zM12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm3.003 8.076c.146.218.2.497.16.836l-.07.385c-.09.465-.263.849-.518 1.152a2.243 2.243 0 01-.982.691v.026c.399.13.655.378.77.744.114.367.087.838-.082 1.414l-.172.596c-.06.21-.09.399-.09.566l-.015.166h-1.43l.012-.128.035-.315c.02-.146.06-.345.125-.594l.184-.67c.115-.437.1-.735-.05-.893-.148-.158-.456-.237-.924-.237H10.54l-.616 3.164H8.51l1.748-8.978h3.076c.736 0 1.267.113 1.594.34l.075.06z"/>
+                </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-white">PHP-FPM</div>
+                <div class="text-xs text-gray-500" id="status-phpfpm-text">Checking...</div>
+            </div>
+            <span id="status-phpfpm" class="relative flex h-2.5 w-2.5 shrink-0">
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-600"></span>
+            </span>
         </div>
-        <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium text-white">PHP-FPM</div>
-            <div class="text-xs text-gray-500" id="status-phpfpm-text">Checking...</div>
+        <div class="mt-3 pt-3 border-t border-gray-800/50 grid grid-cols-2 gap-2">
+            <div><span class="text-[10px] text-gray-600 uppercase">Version</span><div class="text-xs font-mono text-gray-400"><?= PHP_VERSION ?></div></div>
+            <div><span class="text-[10px] text-gray-600 uppercase">Pool</span><div class="text-xs font-mono text-gray-400">ondemand</div></div>
         </div>
-        <span id="status-phpfpm" class="relative flex h-2.5 w-2.5 shrink-0">
-            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-600"></span>
-        </span>
     </div>
 
     <!-- WireGuard -->
-    <div class="bg-panel-card border border-panel-border rounded-xl p-4 flex items-center gap-4 transition-shadow duration-200 hover:shadow-lg hover:shadow-black/20">
-        <div class="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center shrink-0">
-            <svg class="w-5 h-5 text-rose-400" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v4.7c0 4.83-3.13 9.37-7 10.5-3.87-1.13-7-5.67-7-10.5V6.3l7-3.12z"/>
-            </svg>
+    <div class="bg-panel-card border border-panel-border rounded-xl p-4 transition-shadow duration-200 hover:shadow-lg hover:shadow-black/20">
+        <div class="flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5 text-rose-400" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v4.7c0 4.83-3.13 9.37-7 10.5-3.87-1.13-7-5.67-7-10.5V6.3l7-3.12z"/>
+                </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-white">WireGuard</div>
+                <div class="text-xs text-gray-500" id="status-wg-text">Checking...</div>
+            </div>
+            <span id="status-wg" class="relative flex h-2.5 w-2.5 shrink-0">
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-600"></span>
+            </span>
         </div>
-        <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium text-white">WireGuard</div>
-            <div class="text-xs text-gray-500" id="status-wg-text">Checking...</div>
+        <div id="wg-details" class="mt-3 pt-3 border-t border-gray-800/50 grid grid-cols-2 gap-2">
+            <div><span class="text-[10px] text-gray-600 uppercase">Address</span><div class="text-xs font-mono text-gray-400" id="wg-addr">--</div></div>
+            <div><span class="text-[10px] text-gray-600 uppercase">Endpoint</span><div class="text-xs font-mono text-gray-400 truncate" id="wg-endpoint">--</div></div>
+            <div><span class="text-[10px] text-gray-600 uppercase">Handshake</span><div class="text-xs font-mono text-gray-400" id="wg-handshake">--</div></div>
+            <div><span class="text-[10px] text-gray-600 uppercase">Transfer</span><div class="text-xs font-mono text-gray-400" id="wg-transfer">--</div></div>
         </div>
-        <span id="status-wg" class="relative flex h-2.5 w-2.5 shrink-0">
-            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-600"></span>
-        </span>
     </div>
 </div>
 

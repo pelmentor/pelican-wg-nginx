@@ -113,6 +113,43 @@ class AdminPanelController {
     }
 
     /**
+     * GET /api/admin/panel/settings — return panel customization settings.
+     */
+    public function getSettings(): void {
+        header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'admin.*');
+        echo json_encode(getPanelSettings());
+    }
+
+    /**
+     * POST /api/admin/panel/settings — save panel customization settings.
+     */
+    public function saveSettings(): void {
+        header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'admin.*');
+
+        $input = json_decode(file_get_contents('php://input'), true);
+        $settings = [
+            'server_name'    => trim($input['server_name'] ?? 'WG-Nginx'),
+            'server_address' => trim($input['server_address'] ?? ''),
+        ];
+
+        // Sanitize — max lengths
+        $settings['server_name'] = mb_substr($settings['server_name'], 0, 50);
+        $settings['server_address'] = mb_substr($settings['server_address'], 0, 100);
+
+        $dir = dirname(PANEL_SETTINGS_FILE);
+        if (!is_dir($dir)) @mkdir($dir, 0755, true);
+
+        $tmp = PANEL_SETTINGS_FILE . '.tmp';
+        file_put_contents($tmp, json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
+        rename($tmp, PANEL_SETTINGS_FILE);
+
+        ActivityLog::log('panel.settings', 'Updated panel settings');
+        echo json_encode(['success' => true]);
+    }
+
+    /**
      * Get system uptime in seconds.
      */
     private function getUptime(): int {

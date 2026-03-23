@@ -14,6 +14,41 @@
         </div>
     </div>
 
+    <!-- Panel Customization -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="px-5 py-3.5 border-b border-gray-800 flex items-center gap-2.5">
+            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42"/>
+            </svg>
+            <h3 class="text-sm font-semibold text-white">Panel Customization</h3>
+        </div>
+        <div class="p-5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Server Name</label>
+                    <input type="text" id="setting-server-name"
+                        class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 focus:outline-none transition"
+                        placeholder="WG-Nginx" maxlength="50">
+                    <p class="text-xs text-gray-600 mt-1">Displayed in sidebar and header bar</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Server Address</label>
+                    <input type="text" id="setting-server-address"
+                        class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 focus:outline-none transition"
+                        placeholder="Auto-detected from HTTP host" maxlength="100">
+                    <p class="text-xs text-gray-600 mt-1">Leave empty to auto-detect from browser</p>
+                </div>
+            </div>
+            <div class="mt-4 flex justify-end">
+                <button onclick="AdminPanel.saveSettings()"
+                    class="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-500 rounded-lg transition">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    Save
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Loading state -->
     <div id="panel-loading" class="flex items-center justify-center py-12">
         <div class="flex items-center gap-3 text-gray-500">

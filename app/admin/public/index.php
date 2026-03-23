@@ -114,6 +114,8 @@ $router->post('/api/users/password', [UserController::class, 'changePassword']);
 
 // API — Admin Panel
 $router->get('/api/admin/panel/info', [AdminPanelController::class, 'info']);
+$router->get('/api/admin/panel/settings', [AdminPanelController::class, 'getSettings']);
+$router->post('/api/admin/panel/settings', [AdminPanelController::class, 'saveSettings']);
 
 // API — Admin Logs
 $router->get('/api/admin/logs', [AdminLogsController::class, 'getLogs']);
