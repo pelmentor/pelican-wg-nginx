@@ -39,6 +39,7 @@ class FilesController {
         try {
             $input = json_decode(file_get_contents('php://input'), true);
             $this->fm->writeFile($input['path'], $input['content']);
+            ActivityLog::log('file.write', $input['path']);
             echo json_encode(['success' => true]);
         } catch (Throwable $e) {
             http_response_code(400);
@@ -51,6 +52,7 @@ class FilesController {
         try {
             $targetDir = $_POST['path'] ?? '/webroot';
             $this->fm->upload($targetDir, $_FILES['files']);
+            ActivityLog::log('file.upload', $targetDir);
             echo json_encode(['success' => true]);
         } catch (Throwable $e) {
             http_response_code(400);
@@ -63,6 +65,7 @@ class FilesController {
         try {
             $input = json_decode(file_get_contents('php://input'), true);
             $this->fm->delete($input['path']);
+            ActivityLog::log('file.delete', $input['path']);
             echo json_encode(['success' => true]);
         } catch (Throwable $e) {
             http_response_code(400);
@@ -75,6 +78,7 @@ class FilesController {
         try {
             $input = json_decode(file_get_contents('php://input'), true);
             $this->fm->rename($input['from'], $input['to']);
+            ActivityLog::log('file.rename', $input['from'] . ' -> ' . $input['to']);
             echo json_encode(['success' => true]);
         } catch (Throwable $e) {
             http_response_code(400);
@@ -124,6 +128,7 @@ class FilesController {
             $name = $input['name'] ?? 'archive';
             $dir = $input['path'] ?? '/';
             $this->fm->compress($dir, $files, $name);
+            ActivityLog::log('file.compress', $name . '.tar.gz in ' . $dir);
             echo json_encode(['success' => true]);
         } catch (Throwable $e) {
             http_response_code(400);
@@ -148,6 +153,7 @@ class FilesController {
         try {
             $input = json_decode(file_get_contents('php://input'), true);
             $this->fm->chmod($input['path'], $input['mode']);
+            ActivityLog::log('file.chmod', $input['path'] . ' -> ' . $input['mode']);
             echo json_encode(['success' => true]);
         } catch (Throwable $e) {
             http_response_code(400);

@@ -33,6 +33,7 @@ class SettingsController {
             return;
         }
         file_put_contents($file, $input['content']);
+        ActivityLog::log('config.save', $input['file']);
         echo json_encode(['success' => true]);
     }
 
@@ -94,6 +95,7 @@ class SettingsController {
         $input = json_decode(file_get_contents('php://input'), true);
         $mgr = new ServiceManager();
         $result = $mgr->control($input['service'] ?? '', $input['action'] ?? '');
+        ActivityLog::log('service.' . ($input['action'] ?? 'unknown'), $input['service'] ?? 'unknown');
         echo json_encode($result);
     }
 

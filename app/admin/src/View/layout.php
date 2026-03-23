@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= Auth::csrfToken() ?>">
     <title>WG-Nginx Admin</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -49,6 +50,9 @@
     <?php endif; ?>
 </head>
 <body class="bg-panel-bg text-gray-300 min-h-screen font-sans antialiased">
+
+    <!-- Toast notification container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2"></div>
 
     <!-- Mobile sidebar overlay -->
     <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-40 hidden lg:hidden" onclick="toggleSidebar()"></div>
@@ -100,6 +104,14 @@
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                 </svg>
                 Settings
+            </a>
+            <a href="/activity"
+               class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150
+                      <?= $page === 'activity' ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-gray-400 hover:text-white hover:bg-white/5' ?>">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                Activity
             </a>
         </nav>
 
@@ -188,6 +200,8 @@
     <script src="/assets/js/files.js"></script>
     <?php elseif ($page === 'settings'): ?>
     <script src="/assets/js/settings.js"></script>
+    <?php elseif ($page === 'activity'): ?>
+    <script src="/assets/js/activity.js"></script>
     <?php endif; ?>
 </body>
 </html>

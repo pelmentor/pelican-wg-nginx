@@ -263,6 +263,7 @@ const FileManager = {
         try {
             const xhr = new XMLHttpRequest();
             xhr.open('POST', '/api/files/upload');
+            xhr.setRequestHeader('X-CSRF-Token', getCsrfToken());
 
             xhr.upload.addEventListener('progress', (e) => {
                 if (e.lengthComputable) {

@@ -138,6 +138,81 @@ function formatUptimeShort(seconds) {
     return m + 'm';
 }
 
+// ── Activity Widget ─────────────────────────────────────────────────
+
+const dashActivityLabels = {
+    'auth.login':        'Login',
+    'auth.logout':       'Logout',
+    'auth.login_failed': 'Failed Login',
+    'file.write':        'File Saved',
+    'file.delete':       'File Deleted',
+    'file.rename':       'File Renamed',
+    'file.upload':       'File Uploaded',
+    'file.compress':     'Compressed',
+    'file.chmod':        'Permissions',
+    'config.save':       'Config Saved',
+    'console.command':   'Command',
+};
+
+const dashActivityColors = {
+    'auth.login':        'text-green-400',
+    'auth.logout':       'text-gray-400',
+    'auth.login_failed': 'text-red-400',
+    'file.write':        'text-blue-400',
+    'file.delete':       'text-red-400',
+    'file.rename':       'text-amber-400',
+    'file.upload':       'text-blue-400',
+    'file.compress':     'text-violet-400',
+    'file.chmod':        'text-amber-400',
+    'config.save':       'text-emerald-400',
+    'console.command':   'text-gray-400',
+};
+
+function dashTimeAgo(ts) {
+    const diff = Math.floor(Date.now() / 1000) - ts;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return Math.floor(diff / 86400) + 'd ago';
+}
+
+function dashEscapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+async function loadDashboardActivity() {
+    const data = await api.get('/api/activity?limit=10');
+    if (!data) return;
+
+    const container = document.getElementById('dashboard-activity');
+    const entries = data.entries || [];
+
+    if (entries.length === 0) {
+        container.innerHTML = '<div class="px-5 py-6 text-center text-sm text-gray-500">No recent activity.</div>';
+        return;
+    }
+
+    container.innerHTML = entries.map(e => {
+        const label = dashActivityLabels[e.action] || e.action;
+        const color = dashActivityColors[e.action] || 'text-gray-400';
+        const detail = e.detail ? dashEscapeHtml(e.detail) : '';
+        const fullTime = new Date(e.time * 1000).toLocaleString();
+
+        return `
+            <div class="flex items-center gap-3 px-5 py-2.5 hover:bg-white/[0.02] transition-colors duration-100">
+                <span class="w-1.5 h-1.5 rounded-full ${color} bg-current shrink-0"></span>
+                <span class="text-xs font-medium ${color}">${dashEscapeHtml(label)}</span>
+                <span class="text-xs text-gray-500 truncate flex-1 min-w-0">${detail}</span>
+                <span class="text-xs text-gray-600 shrink-0" title="${fullTime}">${dashTimeAgo(e.time)}</span>
+            </div>`;
+    }).join('');
+}
+
 // ── Start polling ──
 updateStats();
+loadDashboardActivity();
 setInterval(updateStats, 2000);
+// Refresh activity every 30 seconds
+setInterval(loadDashboardActivity, 30000);

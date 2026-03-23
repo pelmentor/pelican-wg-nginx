@@ -8,16 +8,34 @@
 require __DIR__ . '/../config.php';
 require __DIR__ . '/../src/Router.php';
 require __DIR__ . '/../src/Auth.php';
+require __DIR__ . '/../src/RateLimit.php';
 require __DIR__ . '/../src/Service/StatsService.php';
 require __DIR__ . '/../src/Service/LogStreamer.php';
 require __DIR__ . '/../src/Service/FileManager.php';
 require __DIR__ . '/../src/Service/ServiceManager.php';
+require __DIR__ . '/../src/Service/ActivityLog.php';
 require __DIR__ . '/../src/Controller/DashboardController.php';
 require __DIR__ . '/../src/Controller/ConsoleController.php';
 require __DIR__ . '/../src/Controller/FilesController.php';
 require __DIR__ . '/../src/Controller/SettingsController.php';
+require __DIR__ . '/../src/Controller/ActivityController.php';
+
+// Opportunistic rate-limit file cleanup
+RateLimit::cleanup();
 
 $router = new Router();
+$clientIp = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+$uri = strtok($_SERVER['REQUEST_URI'], '?');
+
+// --- Rate limiting for login ---
+if ($uri === '/login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    RateLimit::enforce("login:{$clientIp}", 5, 60);
+}
+
+// --- Rate limiting for all API routes ---
+if (str_starts_with($uri, '/api/')) {
+    RateLimit::enforce("api:{$clientIp}", 60, 60);
+}
 
 // --- Public routes (no auth) ---
 $router->get('/login', fn() => Auth::handleLogin());
@@ -26,9 +44,13 @@ $router->get('/logout', fn() => Auth::handleLogout());
 $router->get('/api/health', fn() => (new DashboardController())->health());
 
 // --- Protected routes (require auth) ---
-$uri = strtok($_SERVER['REQUEST_URI'], '?');
 if ($uri !== '/login' && $uri !== '/api/health') {
     Auth::requireAuth();
+}
+
+// --- CSRF verification on all POST routes (except login, which has its own form token) ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $uri !== '/login') {
+    Auth::verifyCsrf();
 }
 
 // Pages
@@ -36,6 +58,7 @@ $router->get('/', [DashboardController::class, 'index']);
 $router->get('/console', [ConsoleController::class, 'index']);
 $router->get('/files', [FilesController::class, 'index']);
 $router->get('/settings', [SettingsController::class, 'index']);
+$router->get('/activity', [ActivityController::class, 'index']);
 
 // API — Dashboard
 $router->get('/api/stats', [DashboardController::class, 'stats']);
@@ -66,6 +89,9 @@ $router->post('/api/settings/config', [SettingsController::class, 'saveConfig'])
 $router->post('/api/settings/validate', [SettingsController::class, 'validateConfig']);
 $router->post('/api/settings/service', [SettingsController::class, 'serviceAction']);
 $router->get('/api/settings/status', [SettingsController::class, 'serviceStatus']);
+
+// API — Activity
+$router->get('/api/activity', [ActivityController::class, 'recent']);
 
 // Dispatch
 $router->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

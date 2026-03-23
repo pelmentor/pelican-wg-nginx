@@ -54,6 +54,7 @@ class ConsoleController {
 
         // Ping — validate host to prevent injection
         if (preg_match('/^ping\s+([\w.\-:]+)$/', $cmd, $m)) {
+            ActivityLog::log('console.command', $cmd);
             $output = shell_exec('ping -c 4 -W 3 ' . escapeshellarg($m[1]) . ' 2>&1');
             echo json_encode(['output' => $output]);
             return;
@@ -70,6 +71,8 @@ class ConsoleController {
             'phpinfo' => shell_exec('php -v 2>&1') . "\n\nExtensions:\n" . shell_exec('php -m 2>&1'),
             default => null,
         };
+
+        ActivityLog::log('console.command', $cmd);
 
         if ($result === null) {
             echo json_encode(['output' => "Unknown command: $cmd\nType 'help' for available commands."]);

@@ -130,3 +130,23 @@
         </span>
     </div>
 </div>
+
+<!-- Recent Activity Widget -->
+<div class="mt-6">
+    <div class="bg-panel-card border border-panel-border rounded-xl overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-panel-border">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-primary-500/10 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <h2 class="text-sm font-semibold text-white">Recent Activity</h2>
+            </div>
+            <a href="/activity" class="text-xs text-primary-400 hover:text-primary-300 transition-colors">View all</a>
+        </div>
+        <div id="dashboard-activity" class="divide-y divide-panel-border">
+            <div class="px-5 py-6 text-center text-sm text-gray-500">Loading...</div>
+        </div>
+    </div>
+</div>
