@@ -23,6 +23,8 @@ http {
     uwsgi_temp_path {{DATA}}/tmp/nginx/uwsgi_temp;
     scgi_temp_path {{DATA}}/tmp/nginx/scgi_temp;
 
+    server_tokens off;
+
     sendfile on;
     tcp_nopush on;
     keepalive_timeout 65;

@@ -5,7 +5,9 @@ const Toast = {
         if (!container) return;
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
-        toast.innerHTML = `<span>${message}</span>`;
+        const span = document.createElement('span');
+        span.textContent = message;
+        toast.appendChild(span);
         container.appendChild(toast);
         setTimeout(() => {
             toast.classList.add('toast-exit');

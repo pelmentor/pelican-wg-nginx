@@ -12,7 +12,10 @@ class FileManager {
      */
     private function resolve(string $path): string {
         $full = realpath($this->root . '/' . ltrim($path, '/'));
-        if (!$full || !str_starts_with($full, $this->root)) {
+        if (!$full) {
+            throw new RuntimeException('Path not found: file or directory does not exist');
+        }
+        if (!str_starts_with($full, $this->root)) {
             throw new RuntimeException('Access denied: path outside sandbox');
         }
         return $full;
@@ -37,8 +40,9 @@ class FileManager {
         $entries = [];
         foreach (scandir($dir) as $name) {
             if ($name === '.' || $name === '..') continue;
-            // Hide .admin_password
+            // Hide sensitive entries from file browser
             if ($name === '.admin_password' && $dir === $this->root) continue;
+            if ($name === 'wg' && $dir === $this->root) continue;
 
             $full = $dir . '/' . $name;
             $entries[] = [
@@ -68,7 +72,7 @@ class FileManager {
 
     public function writeFile(string $path, string $content): void {
         $full = $this->resolve($path);
-        file_put_contents($full, $content);
+        file_put_contents($full, $content, LOCK_EX);
     }
 
     public function delete(string $path): void {
@@ -93,6 +97,14 @@ class FileManager {
         }
     }
 
+    /**
+     * Upload files to the target directory.
+     *
+     * SECURITY NOTE: Uploading .php, .phtml, or .phar files to the webroot
+     * allows arbitrary PHP code execution via the user-facing Nginx vhost.
+     * This is intentionally permitted because the admin explicitly chose the
+     * upload destination, but operators should be aware of the risk.
+     */
     public function upload(string $targetDir, array $files): void {
         $dir = $targetDir === '/' || $targetDir === '' ? $this->root : $this->resolve($targetDir);
         if (!is_dir($dir)) throw new RuntimeException('Target directory does not exist');
@@ -190,6 +202,24 @@ class FileManager {
         }
 
         $extractDir = dirname($full);
+        $realExtractDir = realpath($extractDir);
+
+        // Zip Slip protection: validate every entry stays inside the extraction directory
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entryName = $zip->getNameIndex($i);
+            // Reject any path containing directory traversal sequences
+            if (str_contains($entryName, '..')) {
+                $zip->close();
+                throw new RuntimeException('Zip archive contains path traversal entry: ' . $entryName);
+            }
+            // If the parent directory already exists, verify it resolves inside the target
+            $canonicalDir = realpath(dirname($realExtractDir . '/' . $entryName));
+            if ($canonicalDir !== false && !str_starts_with($canonicalDir, $realExtractDir)) {
+                $zip->close();
+                throw new RuntimeException('Zip archive contains entry that escapes target directory: ' . $entryName);
+            }
+        }
+
         $zip->extractTo($extractDir);
         $zip->close();
     }

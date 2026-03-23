@@ -48,8 +48,8 @@ if ($uri !== '/login' && $uri !== '/api/health') {
     Auth::requireAuth();
 }
 
-// --- CSRF verification on all POST routes (except login, which has its own form token) ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $uri !== '/login') {
+// --- CSRF verification on all POST routes (including login) ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Auth::verifyCsrf();
 }
 

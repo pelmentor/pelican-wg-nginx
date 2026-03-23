@@ -46,8 +46,9 @@ class ServiceManager {
     }
 
     private function run(string $cmd): array {
-        $output = shell_exec($cmd) ?? '';
-        return ['success' => true, 'output' => trim($output)];
+        exec($cmd, $outputLines, $exitCode);
+        $output = implode("\n", $outputLines);
+        return ['success' => $exitCode === 0, 'output' => trim($output)];
     }
 
     private function isRunning(string $name): bool {

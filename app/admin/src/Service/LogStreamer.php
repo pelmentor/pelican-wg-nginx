@@ -29,6 +29,10 @@ class LogStreamer {
 
             if ($pos < $size) {
                 $h = fopen($file, 'r');
+                if ($h === false) {
+                    $newPositions[$key] = $size;
+                    continue;
+                }
                 fseek($h, $pos);
                 $chunk = fread($h, min($size - $pos, 65536)); // Max 64KB per poll
                 fclose($h);

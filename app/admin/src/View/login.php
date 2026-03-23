@@ -40,6 +40,7 @@
             <?php endif; ?>
 
             <form method="POST" action="/login">
+                <input type="hidden" name="_csrf" value="<?= Auth::csrfToken() ?>">
                 <label class="block text-sm font-medium text-gray-400 mb-2">Password</label>
                 <input
                     type="password"

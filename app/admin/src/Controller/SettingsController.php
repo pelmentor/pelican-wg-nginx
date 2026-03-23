@@ -2,7 +2,7 @@
 
 class SettingsController {
     private const CONFIG_MAP = [
-        'wireguard' => '/data/wg/wg0.conf',
+        'wireguard' => '/etc/wireguard/wg0.conf',
         'nginx' => '/data/nginx/user.conf',
         'php' => '/data/php/php-fpm.conf',
     ];
@@ -32,7 +32,9 @@ class SettingsController {
             echo json_encode(['error' => 'Invalid config file']);
             return;
         }
-        file_put_contents($file, $input['content']);
+        $tmpFile = $file . '.tmp';
+        file_put_contents($tmpFile, $input['content'], LOCK_EX);
+        rename($tmpFile, $file);
         ActivityLog::log('config.save', $input['file']);
         echo json_encode(['success' => true]);
     }
@@ -53,7 +55,7 @@ class SettingsController {
         file_put_contents($tmpFile, $content);
 
         $result = match ($file) {
-            'nginx' => shell_exec("nginx -t -c $tmpFile 2>&1"),
+            'nginx' => $this->validateNginxConfig($tmpFile),
             'php' => 'PHP-FPM config validation not available via CLI',
             'wireguard' => $this->validateWgConfig($content),
             default => 'Unknown config type',
@@ -63,6 +65,21 @@ class SettingsController {
 
         $valid = !str_contains($result, 'failed') && !str_contains($result, 'error');
         echo json_encode(['valid' => $valid, 'output' => $result]);
+    }
+
+    /**
+     * Validate Nginx config by wrapping the user.conf snippet in a minimal
+     * http{} block so that `nginx -t` receives a full, valid config file.
+     */
+    private function validateNginxConfig(string $snippetPath): string {
+        $wrapperPath = '/tmp/validate_nginx_wrapper.conf';
+        $wrapper = "events {}\nhttp { include /etc/nginx/mime.types; include " . $snippetPath . "; }\n";
+        file_put_contents($wrapperPath, $wrapper);
+
+        $output = shell_exec("nginx -t -c " . escapeshellarg($wrapperPath) . " 2>&1") ?? '';
+        @unlink($wrapperPath);
+
+        return $output;
     }
 
     /**

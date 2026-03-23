@@ -4,8 +4,24 @@ class Auth {
     /** Session inactivity timeout in seconds (30 minutes). */
     private const SESSION_TIMEOUT = 1800;
 
+    /**
+     * Start the session with secure cookie parameters if not already started.
+     */
+    private static function ensureSession(): void {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path' => '/',
+                'secure' => !empty($_SERVER['HTTPS']),
+                'httponly' => true,
+                'samesite' => 'Strict',
+            ]);
+            session_start();
+        }
+    }
+
     public static function check(): bool {
-        if (session_status() === PHP_SESSION_NONE) session_start();
+        self::ensureSession();
 
         if (empty($_SESSION['authenticated'])) {
             return false;
@@ -42,7 +58,7 @@ class Auth {
      * Return the current CSRF token, generating one if absent.
      */
     public static function csrfToken(): string {
-        if (session_status() === PHP_SESSION_NONE) session_start();
+        self::ensureSession();
         if (empty($_SESSION['csrf_token'])) {
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         }
@@ -73,7 +89,7 @@ class Auth {
     public static function login(string $password): bool {
         if (!hash_equals(ADMIN_PASSWORD, $password)) return false;
 
-        if (session_status() === PHP_SESSION_NONE) session_start();
+        self::ensureSession();
         // Regenerate session ID to prevent fixation attacks
         session_regenerate_id(true);
         $_SESSION['authenticated'] = true;
@@ -85,7 +101,7 @@ class Auth {
     }
 
     public static function logout(): void {
-        if (session_status() === PHP_SESSION_NONE) session_start();
+        self::ensureSession();
         session_destroy();
     }
 

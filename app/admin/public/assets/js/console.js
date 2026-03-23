@@ -354,14 +354,19 @@ const ConsoleActions = {
         terminal.writeln('');
     },
 
-    async stopAll() {
-        if (!confirm('Stop all services? The container will exit.')) return;
+    async stopWireguard() {
+        if (!confirm('Stop WireGuard? (Nginx will keep running so the admin panel stays reachable.)')) return;
         terminal.writeln('');
-        terminal.writeln(PRELUDE + ERROR_STYLE + 'Stopping services...' + RESET);
+        terminal.writeln(PRELUDE + WARN_STYLE + 'Stopping WireGuard...' + RESET);
 
-        await api.post('/api/settings/service', { service: 'nginx', action: 'restart' });
-        await api.post('/api/settings/service', { service: 'wireguard', action: 'down' });
+        const result = await api.post('/api/settings/service', { service: 'wireguard', action: 'down' });
+        if (result && result.output) {
+            result.output.split('\n').forEach(line => {
+                terminal.writeln('  ' + line);
+            });
+        }
 
-        terminal.writeln(PRELUDE + ERROR_STYLE + 'Services stopped.' + RESET);
+        terminal.writeln(PRELUDE + INFO_STYLE + 'WireGuard stopped.' + RESET);
+        terminal.writeln('');
     },
 };

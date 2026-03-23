@@ -170,11 +170,10 @@ ${WG_ENDPOINT_LINE}
 AllowedIPs = ${WG_PEER_ALLOWED_IPS:-10.0.0.0/24}
 PersistentKeepalive = 25
 EOF
-    # Protect config — contains private key
-    chmod 600 "$WG_CONF"
-
-    # Copy to /data so it's visible in admin panel file manager
-    cp "$WG_CONF" "${DATA}/wg/wg0.conf"
+    # Protect config — contains private key.
+    # Readable by www-data (admin PHP-FPM) but NOT world-readable.
+    chmod 640 "$WG_CONF"
+    chown root:www-data "$WG_CONF"
 
     log_info "Starting WireGuard..."
     # tee: output goes to both console (docker logs) and persistent log file
