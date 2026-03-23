@@ -1,7 +1,80 @@
-/* Console terminal styling — ref: Pelican Panel console.css */
+/* ============================================
+   WG-Nginx Admin — Pelican Panel Theme
+   bg-gray-950 (#030712) body
+   bg-gray-900 (#111827) cards / sidebar
+   border-gray-800 (#1f2937) borders
+   ============================================ */
+
+/* ---------- Base ---------- */
+*, *::before, *::after {
+    scrollbar-color: #1f2937 transparent;
+}
+
+html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+    background: rgba(37, 99, 235, 0.4);
+    color: #fff;
+}
+
+/* ---------- Custom Scrollbar ---------- */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    background: transparent;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* Hide scrollbar for info-bar horizontal scroll */
+.scrollbar-none::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* ---------- Console / Terminal ---------- */
 #terminal {
-    border-radius: 10px 10px 0 0;
     overflow: hidden;
+    background: #030712;
+}
+
+#terminal .xterm {
+    padding: 8px 0;
+}
+
+.xterm .xterm-viewport {
+    scrollbar-width: thin;
+    scrollbar-color: #1f2937 transparent;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar {
+    width: 6px;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+    background: #1f2937;
+    border-radius: 3px;
 }
 
 .xterm .xterm-rows > div {
@@ -10,27 +83,95 @@
     padding-right: 10px;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-    background: none;
-    width: 10px;
+/* ---------- Dashboard progress bars ---------- */
+[id^="bar-"] {
+    transition: width 700ms cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: width;
 }
 
-::-webkit-scrollbar-thumb {
-    background: #4b5563;
-    border-radius: 5px;
+/* ---------- Status dot pulse ---------- */
+@keyframes pulse-green {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
-::-webkit-scrollbar-track {
-    background: transparent;
+.status-pulse {
+    animation: pulse-green 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Editor textarea */
-#editor-content, #config-editor {
+/* ---------- Editor / Textarea ---------- */
+#editor-content,
+#config-editor {
     tab-size: 4;
+    -moz-tab-size: 4;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.7;
+    caret-color: #60a5fa;
+    background: #030712;
+    color: #e2e8f0;
+    border: none;
+    outline: none;
+    resize: none;
 }
 
-/* Transitions */
-.transition {
+#editor-content:focus,
+#config-editor:focus {
+    box-shadow: none;
+    outline: none;
+}
+
+/* ---------- File table rows ---------- */
+#file-list tr {
+    transition: background-color 150ms ease;
+}
+
+/* ---------- Config tab indicator ---------- */
+.config-tab-indicator {
+    transition: opacity 150ms ease;
+}
+
+/* ---------- Nav item transitions ---------- */
+.nav-item {
+    position: relative;
     transition: all 150ms ease;
+}
+
+.nav-item:not(.bg-primary-600)::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%) scaleY(0);
+    width: 3px;
+    height: 60%;
+    background: #2563eb;
+    border-radius: 0 4px 4px 0;
+    transition: transform 150ms ease;
+}
+
+.nav-item:not(.bg-primary-600):hover::before {
+    transform: translateY(-50%) scaleY(1);
+}
+
+/* ---------- Upload progress ---------- */
+#upload-bar {
+    transition: width 300ms ease;
+}
+
+/* ---------- Fade-in animation ---------- */
+@keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+    animation: fade-in 300ms ease-out both;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1023px) {
+    #terminal {
+        height: 400px !important;
+    }
 }
