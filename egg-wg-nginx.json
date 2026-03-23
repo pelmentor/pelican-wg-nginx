@@ -8,7 +8,7 @@
     "name": "WireGuard + Nginx + PHP-FPM",
     "author": "pelmentor@github.com",
     "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    "description": "Nginx + PHP-FPM web server with a WireGuard VPN client. Serves web content with data delivered over a WG tunnel from a remote host.",
+    "description": "Nginx + PHP 8.1 FPM web server with a WireGuard VPN client. Ubuntu 22.04 base. Data can be delivered over a WG tunnel from a remote host.",
     "features": null,
     "docker_images": {
         "WG + Nginx + PHP-FPM": "ghcr.io/pelmentor/pelican-wg-nginx:latest"
