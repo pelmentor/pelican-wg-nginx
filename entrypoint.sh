@@ -86,6 +86,7 @@ DATA="/data"
 cleanup() {
     log_info "Shutting down..."
     kill "$TAIL_PID" 2>/dev/null || true            # Stop log streaming
+    kill "$WS_PID" 2>/dev/null || true              # Stop WebSocket server
     nginx -s quit 2>/dev/null || true                # Graceful nginx stop (SIGQUIT)
     kill -SIGQUIT "$PHP_FPM_PID" 2>/dev/null || true # Graceful PHP-FPM stop
     wait "$PHP_FPM_PID" 2>/dev/null || true          # Wait for PHP-FPM to finish
@@ -254,7 +255,19 @@ else
 fi
 
 # ===========================================================================
-# STEP 4: Start Nginx
+# STEP 4: Start WebSocket server (Go binary for real-time console)
+# ===========================================================================
+log_step "Starting WebSocket server..."
+
+# The Go binary tails all .log files in /data/logs/ and streams new lines
+# to connected WebSocket clients. Listens on 127.0.0.1:6790 (internal only).
+# Nginx proxies /ws → 127.0.0.1:6790/ws for the admin panel.
+ws-server --port 6790 --logdir "${DATA}/logs" &
+WS_PID=$!
+log_info "WebSocket server started (PID: $WS_PID, port: 6790)"
+
+# ===========================================================================
+# STEP 5: Start Nginx
 # ===========================================================================
 log_step "Starting Nginx..."
 

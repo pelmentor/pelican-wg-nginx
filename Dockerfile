@@ -1,22 +1,27 @@
 # =============================================================================
-# WG-Nginx: WireGuard + Nginx + PHP 8.1 FPM + Admin Panel
+# WG-Nginx: WireGuard + Nginx + PHP 8.1 FPM + Admin Panel + WebSocket
 # =============================================================================
 # Standalone Docker image for Unraid (or any Docker host).
 # Runs as ROOT with --cap-add=NET_ADMIN.
 #
 # Two web interfaces:
 #   :USER_PORT  (default 7890) — user web content from /data/webroot/
-#   :ADMIN_PORT (default 9876) — admin panel
+#   :ADMIN_PORT (default 9876) — admin panel + WebSocket console
 #
 # Process model:
-#   Nginx master: root (binds ports, spawns workers)
-#   Nginx workers: www-data (handles requests)
-#   PHP-FPM:       www-data (same user — socket permissions just work)
-#   WireGuard:     root (kernel interface, oneshot)
-#
-# Persistent volume: /data/ (mount to host)
+#   Nginx master: root → workers: www-data
+#   PHP-FPM: www-data
+#   WireGuard: root (oneshot)
+#   ws-server: Go binary, streams logs via WebSocket (port 6790, internal)
 # =============================================================================
 
+# --- Stage 1: Build Go WebSocket server ---
+FROM golang:1.21-alpine AS ws-builder
+WORKDIR /build
+COPY app/ws/ .
+RUN go build -ldflags="-s -w" -o /ws-server .
+
+# --- Stage 2: Runtime image ---
 FROM ubuntu:22.04
 
 LABEL maintainer="pelmentor"
@@ -35,12 +40,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     WG_LISTEN_PORT=""
 
 # =============================================================================
-# Packages
+# Packages — pinned to php8.1-* for reproducibility
+# sudo: needed by wg-quick (calls sudo internally even as root)
 # =============================================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wireguard-tools \
     iproute2 \
     iptables \
+    sudo \
     nginx \
     php8.1-fpm \
     php8.1-cli \
@@ -61,11 +68,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # =============================================================================
 # Directory structure
 # =============================================================================
-# /data owned by www-data so Nginx workers and PHP-FPM can write to it.
-# Entrypoint also runs chown at startup for volumes mounted from host.
 RUN mkdir -p /data/{webroot,wg,nginx,php,logs,tmp/nginx} \
     && chown -R www-data:www-data /data \
     && ln -sf /data/logs/nginx-error.log /var/log/nginx/error.log
+
+# Copy Go WebSocket binary from builder stage
+COPY --from=ws-builder /ws-server /usr/local/bin/ws-server
 
 # Application code (read-only at runtime)
 COPY app/ /app/

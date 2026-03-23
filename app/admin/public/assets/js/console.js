@@ -1,12 +1,14 @@
-// Console — xterm.js terminal with log polling + command input
+// Console — xterm.js terminal with WebSocket real-time log streaming
 //
-// Why polling instead of SSE:
-// SSE holds a PHP-FPM worker for the entire connection, starving other
-// requests (files, dashboard, settings). Polling releases the worker
-// immediately after each 50ms request. 2s interval is fast enough for logs.
+// Architecture:
+//   Browser ←WebSocket→ Nginx (:9876/ws) ←proxy→ Go ws-server (:6790)
+//   Go ws-server tails all log files and broadcasts new lines instantly.
 //
-// Ref: Pelican Panel uses WebSocket via Wings daemon (Go process).
-// We don't have a Go daemon, so polling is the proper PHP approach.
+// This replaces the old HTTP polling approach. WebSocket gives <50ms latency
+// vs 2000ms polling delay. The Go binary handles thousands of connections
+// with minimal memory, unlike PHP-FPM which would hold a worker per connection.
+//
+// Ref: Pelican Panel uses WebSocket via Wings (Go) for the same reason.
 
 const PRELUDE = '\x1b[1m\x1b[33mwg-nginx ~ \x1b[0m';
 const ERROR_STYLE = '\x1b[1m\x1b[31m';
@@ -52,21 +54,11 @@ const terminal = new Terminal({
 const fitAddon = new FitAddon.FitAddon();
 terminal.loadAddon(fitAddon);
 
-// Try to load WebLinksAddon if available (graceful fallback)
-try {
-    if (typeof WebLinksAddon !== 'undefined' && WebLinksAddon.WebLinksAddon) {
-        const webLinksAddon = new WebLinksAddon.WebLinksAddon();
-        terminal.loadAddon(webLinksAddon);
-    }
-} catch (_) {
-    // WebLinksAddon not available — links won't be clickable, no big deal
-}
-
 terminal.open(document.getElementById('terminal'));
 fitAddon.fit();
 window.addEventListener('resize', () => fitAddon.fit());
 
-// Ctrl+C = copy selection, Ctrl+F = open search
+// Ctrl+C = copy, Ctrl+F = search
 terminal.attachCustomKeyEventHandler((event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
         navigator.clipboard.writeText(terminal.getSelection());
@@ -80,9 +72,57 @@ terminal.attachCustomKeyEventHandler((event) => {
     return true;
 });
 
-terminal.writeln(PRELUDE + INFO_STYLE + 'Console ready. Polling logs every 2s...' + RESET);
-terminal.writeln(PRELUDE + 'Type commands below. Use "help" for available commands.' + RESET);
+terminal.writeln(PRELUDE + INFO_STYLE + 'Console ready.' + RESET);
 terminal.writeln('');
+
+// --- WebSocket connection for real-time log streaming ---
+let ws = null;
+let wsReconnectTimer = null;
+
+function connectWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${protocol}//${window.location.host}/ws`;
+
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+        terminal.writeln(PRELUDE + INFO_STYLE + '[WebSocket connected — streaming logs in real time]' + RESET);
+        terminal.writeln('');
+    };
+
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            const source = data.source || 'log';
+            const time = data.time || '';
+
+            // Color-code by source (same as Pelican's console output styling)
+            let style = '';
+            if (source === 'system') style = INFO_STYLE;
+            else if (source.includes('error')) style = ERROR_STYLE;
+            else if (source.includes('access')) style = '\x1b[90m'; // dim gray
+            else if (source.includes('wireguard')) style = '\x1b[36m'; // cyan
+            else if (source.includes('admin')) style = '\x1b[35m'; // magenta
+
+            terminal.writeln(`${style}[${time}][${source}]${RESET} ${data.line}`);
+        } catch (_) {
+            // Non-JSON message — display raw
+            terminal.writeln(event.data);
+        }
+    };
+
+    ws.onclose = () => {
+        terminal.writeln('');
+        terminal.writeln(PRELUDE + WARN_STYLE + '[WebSocket disconnected — reconnecting in 3s...]' + RESET);
+        wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+    };
+
+    ws.onerror = () => {
+        // onclose will fire after onerror — reconnect handled there
+    };
+}
+
+connectWebSocket();
 
 // --- In-terminal search (Ctrl+F) ---
 const searchBar = document.getElementById('terminal-search-bar');
@@ -102,120 +142,42 @@ function toggleSearch(open) {
     }
 }
 
-function getTerminalText() {
-    const buffer = terminal.buffer.active;
-    const lines = [];
-    for (let i = 0; i < buffer.length; i++) {
-        const line = buffer.getLine(i);
-        if (line) lines.push(line.translateToString(true));
-    }
-    return lines;
-}
-
 function doSearch() {
     const query = searchInput.value.trim().toLowerCase();
-    if (!query) {
-        searchInfo.textContent = '';
-        return;
-    }
-    const lines = getTerminalText();
-    let matches = 0;
-    let lastMatchRow = -1;
-    for (let i = 0; i < lines.length; i++) {
-        if (lines[i].toLowerCase().includes(query)) {
+    if (!query) { searchInfo.textContent = ''; return; }
+    const buffer = terminal.buffer.active;
+    let matches = 0, lastRow = -1;
+    for (let i = 0; i < buffer.length; i++) {
+        const line = buffer.getLine(i);
+        if (line && line.translateToString(true).toLowerCase().includes(query)) {
             matches++;
-            lastMatchRow = i;
+            lastRow = i;
         }
     }
     searchInfo.textContent = matches > 0 ? `${matches} match${matches > 1 ? 'es' : ''}` : 'No matches';
-    // Scroll to the last match so user sees the most recent occurrence
-    if (lastMatchRow >= 0) {
-        terminal.scrollToLine(Math.max(0, lastMatchRow - 5));
-    }
+    if (lastRow >= 0) terminal.scrollToLine(Math.max(0, lastRow - 5));
 }
 
 if (searchInput) {
     searchInput.addEventListener('input', doSearch);
     searchInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            toggleSearch(false);
-        }
-        if (e.key === 'Enter') {
-            doSearch();
-        }
+        if (e.key === 'Escape') toggleSearch(false);
+        if (e.key === 'Enter') doSearch();
     });
 }
 
-// Close search button
 const searchClose = document.getElementById('terminal-search-close');
-if (searchClose) {
-    searchClose.addEventListener('click', () => toggleSearch(false));
-}
+if (searchClose) searchClose.addEventListener('click', () => toggleSearch(false));
 
-// Global Ctrl+F capture (when focus is outside terminal)
 document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        // Only intercept on the console page
-        if (document.getElementById('terminal')) {
-            e.preventDefault();
-            toggleSearch(true);
-        }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f' && document.getElementById('terminal')) {
+        e.preventDefault();
+        toggleSearch(true);
     }
 });
 
-// --- Log polling — tracks byte positions per file, fetches only new data ---
-let logPositions = {};
-let pollFailCount = 0;
-
-async function pollLogs() {
-    try {
-        const posParam = encodeURIComponent(JSON.stringify(logPositions));
-        const data = await api.get('/api/console/poll?positions=' + posParam);
-        if (!data) {
-            pollFailCount++;
-            showPollWarning();
-            return;
-        }
-
-        // Reset fail counter on success
-        pollFailCount = 0;
-
-        // Update positions for next poll
-        logPositions = data.positions;
-
-        // Render new lines
-        if (data.lines && data.lines.length > 0) {
-            data.lines.forEach(entry => {
-                let style = '';
-                if (entry.source.includes('error')) style = ERROR_STYLE;
-                else if (entry.source.includes('access')) style = '\x1b[90m';
-                else if (entry.source.includes('wireguard')) style = '\x1b[36m';
-
-                terminal.writeln(`${style}[${entry.time}][${entry.source}]${RESET} ${entry.line}`);
-            });
-        }
-    } catch (e) {
-        pollFailCount++;
-        showPollWarning();
-    }
-}
-
-function showPollWarning() {
-    if (pollFailCount === 3) {
-        terminal.writeln('');
-        terminal.writeln(PRELUDE + WARN_STYLE + '[WARN] Log polling failed \u2014 retrying...' + RESET);
-        terminal.writeln('');
-    }
-}
-
-// Start polling
-pollLogs();
-setInterval(pollLogs, 2000);
-
 // --- Command input with persistent history ---
 const cmdInput = document.getElementById('command-input');
-
-// Restore command history from localStorage
 const cmdHistory = JSON.parse(localStorage.getItem('wg-console-history')) || [];
 let historyIndex = -1;
 
@@ -233,11 +195,9 @@ cmdInput.addEventListener('keydown', async (e) => {
         cmdInput.value = '';
         saveHistory();
 
-        // Handle client-side 'clear' command
         if (cmd === 'clear') {
             terminal.clear();
             terminal.writeln(PRELUDE + INFO_STYLE + 'Terminal cleared.' + RESET);
-            terminal.writeln('');
             return;
         }
 
@@ -246,9 +206,7 @@ cmdInput.addEventListener('keydown', async (e) => {
 
         const result = await api.post('/api/console/command', { command: cmd });
         if (result && result.output) {
-            result.output.split('\n').forEach(line => {
-                terminal.writeln('  ' + line);
-            });
+            result.output.split('\n').forEach(line => terminal.writeln('  ' + line));
         } else if (result && result.error) {
             terminal.writeln(ERROR_STYLE + '  ' + result.error + RESET);
         }
@@ -280,12 +238,10 @@ if (clearBtn) {
     clearBtn.addEventListener('click', () => {
         terminal.clear();
         terminal.writeln(PRELUDE + INFO_STYLE + 'Terminal cleared.' + RESET);
-        terminal.writeln('');
     });
 }
 
-// --- Live stats on console page (like Pelican) ---
-// Polls /api/stats and updates the mini stat widgets above the terminal.
+// --- Live stats on console page ---
 let prevConsoleNet = null;
 let prevConsoleTime = null;
 
@@ -299,11 +255,11 @@ async function updateConsoleStats() {
         const memEl = document.getElementById('console-memory');
         const netEl = document.getElementById('console-network');
 
-        if (cpuEl) cpuEl.textContent = parseFloat(data.cpu.percent).toFixed(1) + '%';
-        if (memEl) memEl.textContent = parseFloat(data.memory.used_mb).toFixed(0) + ' MiB';
+        if (cpuEl) cpuEl.textContent = parseFloat(data.cpu?.percent || 0).toFixed(1) + '%';
+        if (memEl) memEl.textContent = parseFloat(data.memory?.used_mb || 0).toFixed(0) + ' MiB';
 
         if (netEl) {
-            const net = data.network.eth0 || {};
+            const net = data.network?.eth0 || {};
             if (prevConsoleNet && prevConsoleTime) {
                 const elapsed = (now - prevConsoleTime) / 1000;
                 if (elapsed > 0) {
@@ -316,7 +272,6 @@ async function updateConsoleStats() {
             prevConsoleTime = now;
         }
 
-        // Update header uptime if available
         const headerUptime = document.getElementById('header-uptime');
         if (headerUptime && data.uptime) {
             const d = Math.floor(data.uptime / 86400);
@@ -330,7 +285,7 @@ async function updateConsoleStats() {
 updateConsoleStats();
 setInterval(updateConsoleStats, 3000);
 
-// --- Power controls (Restart/Stop services) ---
+// --- Power controls ---
 const ConsoleActions = {
     async restartAll() {
         if (!confirm('Restart all services (Nginx + PHP-FPM + WireGuard)?')) return;
@@ -345,9 +300,7 @@ const ConsoleActions = {
 
         results.forEach(r => {
             if (r && r.output) {
-                r.output.split('\n').forEach(line => {
-                    terminal.writeln('  ' + line);
-                });
+                r.output.split('\n').forEach(line => terminal.writeln('  ' + line));
             }
         });
         terminal.writeln(PRELUDE + INFO_STYLE + 'Services restarted.' + RESET);
@@ -355,17 +308,14 @@ const ConsoleActions = {
     },
 
     async stopWireguard() {
-        if (!confirm('Stop WireGuard? (Nginx will keep running so the admin panel stays reachable.)')) return;
+        if (!confirm('Stop WireGuard? (Nginx stays up so admin panel remains reachable.)')) return;
         terminal.writeln('');
         terminal.writeln(PRELUDE + WARN_STYLE + 'Stopping WireGuard...' + RESET);
 
         const result = await api.post('/api/settings/service', { service: 'wireguard', action: 'down' });
         if (result && result.output) {
-            result.output.split('\n').forEach(line => {
-                terminal.writeln('  ' + line);
-            });
+            result.output.split('\n').forEach(line => terminal.writeln('  ' + line));
         }
-
         terminal.writeln(PRELUDE + INFO_STYLE + 'WireGuard stopped.' + RESET);
         terminal.writeln('');
     },
