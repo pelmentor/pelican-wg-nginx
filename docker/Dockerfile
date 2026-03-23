@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iptables \
     # Nginx
     nginx \
-    # PHP-FPM + модули (BlueMap/Dynmap могут использовать PHP)
+    # PHP-FPM + common modules for web applications
     php-fpm \
     php-cli \
     php-mbstring \
@@ -51,6 +51,11 @@ RUN useradd -m -d /home/container -s /bin/bash -u 1000 container
 # /defaults/ — бэкап конфигов, entrypoint копирует их если пользователь удалил
 # Ref: linuxserver — паттерн /defaults/ для восстановления конфигов
 # =============================================================================
+# Why /tmp/ instead of /run/:
+# Pelican Wings mounts /run as read-only inside containers (by design).
+# PID files and unix sockets are ephemeral runtime data — /tmp is the
+# correct writable location in this environment.
+# Ref: trafex/docker-php-nginx uses the same /tmp approach.
 RUN mkdir -p \
     /home/container/{webroot,wg,nginx,php,logs,tmp} \
     /defaults \
