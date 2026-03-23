@@ -266,10 +266,17 @@ export ADMIN_PASSWORD
 # ---------------------------------------------------------------------------
 # Default admin user — create users.json with default admin if not exists.
 # ---------------------------------------------------------------------------
+# Default admin user — create users.json with bcrypt-hashed password.
+# Uses PHP's password_hash() because bash can't do bcrypt.
 if [ ! -f "${DATA}/admin/users.json" ]; then
-    echo '[{"username":"admin","role":"admin"}]' > "${DATA}/admin/users.json"
+    PASS_HASH=$(php -r "echo password_hash('${ADMIN_PASSWORD}', PASSWORD_BCRYPT, ['cost' => 12]);")
+    cat > "${DATA}/admin/users.json" <<USERJSON
+{"users":[{"id":"u_admin","username":"admin","password_hash":"${PASS_HASH}","role":"admin","created_at":"$(date -Iseconds)","last_login":null}]}
+USERJSON
     chown www-data:www-data "${DATA}/admin/users.json"
     chmod 640 "${DATA}/admin/users.json"
+    FIRST_RUN_PASSWORD=true
+    log_info "Default admin account created (username: admin)"
 fi
 
 # ===========================================================================
@@ -331,7 +338,14 @@ log_info "  Admin panel:   http://0.0.0.0:${ADMIN_PORT}"
 if [ "$WG_ENABLED" = true ]; then
     log_info "  WireGuard:     ${WG_ADDRESS:-10.0.0.2/24}"
 fi
-log_info "  Admin password: ${ADMIN_PASSWORD}"
+# Only show password on first run (when we just created the account).
+# After that, user should have changed it or stored it securely.
+if [ "${FIRST_RUN_PASSWORD:-}" = "true" ]; then
+    log_info "  Admin login:   admin / ${ADMIN_PASSWORD}"
+    log_info "  CHANGE THIS PASSWORD after first login!"
+else
+    log_info "  Admin login:   admin (password set previously)"
+fi
 log_info "============================================"
 echo ""
 
