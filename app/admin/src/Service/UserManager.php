@@ -126,6 +126,8 @@ class UserManager {
     /**
      * Verify a plaintext password against a user's stored hash.
      */
+    // SECURITY: password_verify() is inherently timing-safe against bcrypt hashes — it always
+    // runs the full bcrypt comparison. Do NOT short-circuit or add early returns around this.
     public static function verifyPassword(array $user, string $password): bool {
         return password_verify($password, $user['password_hash'] ?? '');
     }
@@ -181,6 +183,8 @@ class UserManager {
      * Execute a callback with exclusive file locking on the users file.
      * The callback receives the users array by reference.
      */
+    // SECURITY: File locking prevents race conditions — without LOCK_EX, concurrent requests
+    // could read stale data and overwrite each other's changes (lost update problem).
     private static function withLock(callable $callback): void {
         $dir = dirname(USERS_FILE);
         if (!is_dir($dir)) {

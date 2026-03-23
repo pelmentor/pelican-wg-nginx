@@ -1,4 +1,6 @@
 // ── Toast Notification System ─────────────────────────────────────────
+// SECURITY: textContent (not innerHTML) is used to render toast messages. This prevents XSS —
+// if an API error message contains "<script>", it is displayed as text, not executed as HTML.
 const Toast = {
     show(message, type = 'success', duration = 3000) {
         const container = document.getElementById('toast-container');

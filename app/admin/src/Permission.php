@@ -53,6 +53,8 @@ class Permission {
     /**
      * Require a permission or abort with 403.
      */
+    // WARNING: This is the ONLY authorization gate in the entire application. Every controller
+    // action must call requirePerm() — if you skip it, that endpoint is accessible to all roles.
     public static function requirePerm(string $role, string $perm): void {
         if (!self::check($role, $perm)) {
             http_response_code(403);

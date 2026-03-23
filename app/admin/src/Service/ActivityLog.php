@@ -16,6 +16,8 @@ class ActivityLog {
      * Uses flock(LOCK_EX) around the entire read-modify-write cycle
      * to prevent race conditions when concurrent requests log simultaneously.
      */
+    // TRAP: flock(LOCK_EX) wraps the entire read-modify-write cycle below. Without it,
+    // concurrent requests would read the same state and one write would silently overwrite the other.
     public static function log(string $action, string $detail = ''): void {
         $file = self::logFile();
         $dir = dirname($file);

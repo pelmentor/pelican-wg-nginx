@@ -41,6 +41,8 @@ class SettingsController {
         if (!is_dir($dir)) {
             @mkdir($dir, 0755, true);
         }
+        // SECURITY: Atomic write via tmp + rename — prevents readers from seeing a half-written
+        // config file. rename() is atomic on POSIX filesystems; a crash mid-write won't corrupt.
         $tmpFile = $file . '.tmp';
         file_put_contents($tmpFile, $input['content'], LOCK_EX);
         rename($tmpFile, $file);
@@ -87,6 +89,8 @@ class SettingsController {
         $wrapper = "events {}\nhttp { include /etc/nginx/mime.types; include " . $snippetPath . "; }\n";
         file_put_contents($wrapperPath, $wrapper);
 
+        // SECURITY: escapeshellarg() is critical — without it, a crafted file path could inject
+        // arbitrary shell commands. Never remove or replace with manual quoting.
         $output = shell_exec("nginx -t -c " . escapeshellarg($wrapperPath) . " 2>&1") ?? '';
         @unlink($wrapperPath);
 

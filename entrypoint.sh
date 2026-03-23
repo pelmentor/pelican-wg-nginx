@@ -199,7 +199,8 @@ AllowedIPs = ${WG_PEER_ALLOWED_IPS:-10.0.0.0/24}
 PersistentKeepalive = 25
 EOF
     # Protect config — contains private key.
-    # Readable by www-data (admin PHP-FPM) but NOT world-readable.
+    # SECURITY: chmod 640 root:www-data — the private key must never be world-readable.
+    # root owns the file; www-data (PHP-FPM) gets read access for the admin settings page.
     chmod 640 "$WG_CONF"
     chown root:www-data "$WG_CONF"
 
@@ -265,8 +266,9 @@ export ADMIN_PASSWORD
 
 # ---------------------------------------------------------------------------
 # Default admin user — create users.json with bcrypt-hashed password.
-# PHP generates the ENTIRE JSON to avoid shell escaping issues with
-# special characters in passwords or bcrypt hashes.
+# SECURITY: PHP generates the ENTIRE JSON to avoid shell escaping issues with
+# special characters in passwords or bcrypt hashes. Using bash interpolation
+# (echo/sed) would break on $ or " in the password or bcrypt's $2y$ prefix.
 if [ ! -f "${DATA}/admin/users.json" ]; then
     php -r '
         $pass = getenv("ADMIN_PASSWORD");

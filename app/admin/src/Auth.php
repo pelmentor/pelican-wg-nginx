@@ -7,6 +7,8 @@ class Auth {
     /**
      * Start the session with secure cookie parameters if not already started.
      */
+    // SECURITY: httponly prevents JS from reading the session cookie (XSS can't steal sessions).
+    // SameSite=Strict prevents the browser from sending the cookie on cross-origin requests (CSRF).
     private static function ensureSession(): void {
         if (session_status() === PHP_SESSION_NONE) {
             session_set_cookie_params([
@@ -111,6 +113,8 @@ class Auth {
         $token = $_POST['_csrf']
             ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
 
+        // SECURITY: hash_equals() is timing-safe — prevents attackers from guessing the token
+        // byte-by-byte via response time differences. Do NOT replace with === or strcmp().
         if (!is_string($token) || $token === '' || !hash_equals(self::csrfToken(), $token)) {
             http_response_code(403);
             header('Content-Type: application/json');
@@ -138,7 +142,8 @@ class Auth {
         }
 
         self::ensureSession();
-        // Regenerate session ID to prevent fixation attacks
+        // SECURITY: session_regenerate_id(true) prevents session fixation — an attacker who sets
+        // a known session ID before login can't hijack the session after authentication succeeds.
         session_regenerate_id(true);
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['login_time'] = time();

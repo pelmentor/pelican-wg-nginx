@@ -10,6 +10,8 @@ class FileManager {
     /**
      * Resolve and validate path — prevents directory traversal attacks.
      */
+    // SECURITY: Path traversal protection — realpath() resolves symlinks and ".." segments,
+    // then str_starts_with() confirms the result is still inside $this->root.
     private function resolve(string $path): string {
         $full = realpath($this->root . '/' . ltrim($path, '/'));
         if (!$full) {
@@ -71,6 +73,7 @@ class FileManager {
 
     public function writeFile(string $path, string $content): void {
         $full = $this->resolve($path);
+        // TRAP: LOCK_EX is essential — without it, concurrent writes corrupt the file.
         file_put_contents($full, $content, LOCK_EX);
     }
 
@@ -104,6 +107,8 @@ class FileManager {
      * This is intentionally permitted because the admin explicitly chose the
      * upload destination, but operators should be aware of the risk.
      */
+    // WARNING: Uploading .php files to webroot = arbitrary code execution via the shared FPM pool.
+    // This is intentional (admin chose the destination), but be aware of the risk.
     public function upload(string $targetDir, array $files): void {
         $dir = $targetDir === '/' || $targetDir === '' ? $this->root : $this->resolve($targetDir);
         if (!is_dir($dir)) throw new RuntimeException('Target directory does not exist');
@@ -184,6 +189,8 @@ class FileManager {
         $zip->close();
     }
 
+    // SECURITY: Zip Slip protection below — every archive entry is checked for ".." traversal
+    // before extraction. Without this, a malicious zip could write files outside the target dir.
     public function decompress(string $path): void {
         $full = $this->resolve($path);
         if (!is_file($full)) throw new RuntimeException('Not a file');
