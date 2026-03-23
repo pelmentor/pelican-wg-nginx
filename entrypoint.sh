@@ -264,15 +264,23 @@ fi
 export ADMIN_PASSWORD
 
 # ---------------------------------------------------------------------------
-# Default admin user — create users.json with default admin if not exists.
-# ---------------------------------------------------------------------------
 # Default admin user — create users.json with bcrypt-hashed password.
-# Uses PHP's password_hash() because bash can't do bcrypt.
+# PHP generates the ENTIRE JSON to avoid shell escaping issues with
+# special characters in passwords or bcrypt hashes.
 if [ ! -f "${DATA}/admin/users.json" ]; then
-    PASS_HASH=$(php -r "echo password_hash('${ADMIN_PASSWORD}', PASSWORD_BCRYPT, ['cost' => 12]);")
-    cat > "${DATA}/admin/users.json" <<USERJSON
-{"users":[{"id":"u_admin","username":"admin","password_hash":"${PASS_HASH}","role":"admin","created_at":"$(date -Iseconds)","last_login":null}]}
-USERJSON
+    php -r '
+        $pass = getenv("ADMIN_PASSWORD");
+        $hash = password_hash($pass, PASSWORD_BCRYPT, ["cost" => 12]);
+        $data = ["users" => [[
+            "id" => "u_admin",
+            "username" => "admin",
+            "password_hash" => $hash,
+            "role" => "admin",
+            "created_at" => time(),
+            "last_login" => null,
+        ]]];
+        file_put_contents("/data/admin/users.json", json_encode($data, JSON_PRETTY_PRINT));
+    '
     chown www-data:www-data "${DATA}/admin/users.json"
     chmod 640 "${DATA}/admin/users.json"
     FIRST_RUN_PASSWORD=true
