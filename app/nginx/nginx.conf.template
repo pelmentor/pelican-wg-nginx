@@ -1,3 +1,8 @@
+# Nginx master runs as root (needed for port binding).
+# Worker processes drop privileges to www-data.
+# This matches PHP-FPM which also runs as www-data —
+# both can access the same unix socket without permission issues.
+user www-data;
 worker_processes auto;
 daemon off;
 pid {{DATA}}/tmp/nginx.pid;
@@ -11,6 +16,7 @@ http {
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
 
+    # Temp dirs must be writable by www-data
     client_body_temp_path {{DATA}}/tmp/nginx/client_temp;
     proxy_temp_path {{DATA}}/tmp/nginx/proxy_temp;
     fastcgi_temp_path {{DATA}}/tmp/nginx/fastcgi_temp;
@@ -20,9 +26,11 @@ http {
     sendfile on;
     tcp_nopush on;
     keepalive_timeout 65;
+
     gzip on;
     gzip_types text/plain text/css application/json application/javascript
                text/xml application/xml image/svg+xml;
+
     client_max_body_size 100m;
 
     # Admin panel

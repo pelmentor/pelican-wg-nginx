@@ -47,6 +47,10 @@ log_info "PHP extensions: $(php -m 2>/dev/null | grep -E '^(curl|gd|mbstring|zip
 # Ensure persistent dirs exist
 mkdir -p "${DATA}"/{webroot,wg,nginx,php,logs,tmp/nginx}
 
+# Nginx workers and PHP-FPM both run as www-data.
+# /data must be writable by www-data for logs, uploads, configs, socket.
+chown -R www-data:www-data "${DATA}"
+
 # Default page if webroot is empty
 if [ ! -f "${DATA}/webroot/index.html" ] && [ -z "$(ls -A "${DATA}/webroot/" 2>/dev/null)" ]; then
     cp /app/default-index.html "${DATA}/webroot/index.html"
@@ -114,7 +118,7 @@ fi
 log_step "Configuring Nginx and PHP-FPM..."
 
 USER_PORT="${USER_PORT:-7890}"
-ADMIN_PORT="${ADMIN_PORT:-8443}"
+ADMIN_PORT="${ADMIN_PORT:-9876}"
 
 # Generate user nginx config from template
 sed -e "s/{{USER_PORT}}/${USER_PORT}/g" \

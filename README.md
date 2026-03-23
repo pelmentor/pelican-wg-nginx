@@ -23,19 +23,19 @@ docker run -d \
   --name wg-nginx \
   --cap-add=NET_ADMIN \
   -p 7890:7890 \
-  -p 8443:8443 \
+  -p 9876:9876 \
   -v /path/to/data:/data \
   ghcr.io/pelmentor/wg-nginx:latest
 ```
 
-Then open `http://YOUR_IP:8443` and login with the password from `docker logs wg-nginx`.
+Then open `http://YOUR_IP:9876` and login with the password from `docker logs wg-nginx`.
 
 ## Ports
 
 | Port | Purpose |
 |------|---------|
 | `7890` (TCP) | User web content (Nginx) |
-| `8443` (TCP) | Admin panel |
+| `9876` (TCP) | Admin panel |
 | WG_LISTEN_PORT (UDP) | WireGuard (if configured) |
 
 ## Environment Variables
@@ -43,7 +43,7 @@ Then open `http://YOUR_IP:8443` and login with the password from `docker logs wg
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `USER_PORT` | `7890` | Port for user web content |
-| `ADMIN_PORT` | `8443` | Port for admin panel |
+| `ADMIN_PORT` | `9876` | Port for admin panel |
 | `ADMIN_PASSWORD` | auto-generated | Admin panel password (shown in logs) |
 | `WG_PRIVATE_KEY` | empty | WireGuard private key (leave empty to disable WG) |
 | `WG_ADDRESS` | `10.0.0.2/24` | Container IP in the WG network |
@@ -88,7 +88,7 @@ Mount `/data` to persist everything:
 
 1. Go to Docker tab → Add Container
 2. Repository: `ghcr.io/pelmentor/wg-nginx:latest`
-3. Add ports: `7890` (TCP), `8443` (TCP)
+3. Add ports: `7890` (TCP), `9876` (TCP)
 4. Add path: `/data` → `/mnt/user/appdata/wg-nginx`
 5. Extra parameters: `--cap-add=NET_ADMIN`
 6. Optional: add WG env vars if you need VPN
@@ -99,7 +99,7 @@ Mount `/data` to persist everything:
 # Pull and run
 docker pull ghcr.io/pelmentor/wg-nginx:latest
 docker run -d --name wg-nginx --cap-add=NET_ADMIN \
-  -p 7890:7890 -p 8443:8443 \
+  -p 7890:7890 -p 9876:9876 \
   -v /mnt/user/appdata/wg-nginx:/data \
   ghcr.io/pelmentor/wg-nginx:latest
 
@@ -130,7 +130,7 @@ Container (root, --cap-add=NET_ADMIN)
 │
 ├── Nginx (two server blocks)
 │   ├── :7890 → /data/webroot/    (user content)
-│   └── :8443 → /app/admin/       (admin panel)
+│   └── :9876 → /app/admin/       (admin panel)
 │
 ├── PHP-FPM 8.1 (single pool, unix socket)
 │
@@ -159,5 +159,5 @@ Container (root, --cap-add=NET_ADMIN)
 ## Requirements
 
 - Docker with `--cap-add=NET_ADMIN` (for WireGuard)
-- Port 7890 and 8443 available
+- Port 7890 and 9876 available
 - WireGuard keys (generate with `wg genkey | tee privatekey | wg pubkey > publickey`)

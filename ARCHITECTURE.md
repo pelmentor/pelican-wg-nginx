@@ -21,7 +21,7 @@ Container (root, --cap-add=NET_ADMIN)
 │
 ├── Nginx server blocks:
 │   ├── :USER_PORT (default 7890) → /data/webroot/
-│   └── :ADMIN_PORT (default 8443) → /app/admin/public/
+│   └── :ADMIN_PORT (default 9876) → /app/admin/public/
 │
 └── Volumes:
     ├── /app/   (read-only, baked into image)
@@ -39,7 +39,7 @@ Container (root, --cap-add=NET_ADMIN)
 ## Admin Panel
 
 ```
-Browser → Nginx :8443 → index.php (front controller)
+Browser → Nginx :9876 → index.php (front controller)
                             ├── Router → Controller
                             ├── Auth (session-based password)
                             ├── DashboardController → /api/stats

@@ -3,11 +3,16 @@ error_log = {{DATA}}/logs/php-fpm-error.log
 daemonize = no
 
 [www]
+; Both Nginx workers and PHP-FPM run as www-data.
+; This is the standard production pattern — the unix socket is owned
+; by www-data:www-data with mode 0660, so both sides can read/write it
+; without any permission hacks.
 user = www-data
 group = www-data
+
 listen = {{DATA}}/tmp/php-fpm.sock
-listen.owner = root
-listen.group = root
+listen.owner = www-data
+listen.group = www-data
 listen.mode = 0660
 
 pm = ondemand
