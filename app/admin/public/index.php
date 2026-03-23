@@ -99,6 +99,8 @@ $router->post('/api/settings/config', [SettingsController::class, 'saveConfig'])
 $router->post('/api/settings/validate', [SettingsController::class, 'validateConfig']);
 $router->post('/api/settings/service', [SettingsController::class, 'serviceAction']);
 $router->get('/api/settings/status', [SettingsController::class, 'serviceStatus']);
+$router->get('/api/settings/wireguard', [SettingsController::class, 'getWireguard']);
+$router->post('/api/settings/wireguard', [SettingsController::class, 'saveWireguard']);
 
 // API — Activity
 $router->get('/api/activity', [ActivityController::class, 'recent']);

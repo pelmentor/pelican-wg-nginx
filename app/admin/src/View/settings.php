@@ -82,8 +82,8 @@
         </button>
     </div>
 
-    <!-- Editor area -->
-    <div class="relative">
+    <!-- Raw editor (shown for Nginx / PHP tabs, hidden for WG form mode) -->
+    <div id="config-editor-wrap" class="relative">
         <textarea
             id="config-editor"
             class="w-full bg-gray-950 text-gray-100 text-sm font-mono p-4 resize-none focus:outline-none leading-relaxed"
@@ -91,6 +91,105 @@
             spellcheck="false"
             placeholder="Select a configuration tab above..."
         ></textarea>
+    </div>
+
+    <!-- WireGuard form (shown when WG tab is active) -->
+    <div id="wg-form" class="hidden">
+        <div class="p-5 space-y-5">
+            <!-- Interface section -->
+            <div>
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                        <svg class="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                        </svg>
+                        Interface
+                    </h3>
+                    <button onclick="Settings.toggleAdvanced()" id="wg-advanced-btn"
+                        class="text-xs text-gray-500 hover:text-gray-300 transition flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+                        </svg>
+                        Raw editor
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">Private Key <span class="text-red-400">*</span></label>
+                        <input type="password" id="wg-private-key"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition"
+                            placeholder="Your WireGuard private key">
+                        <p class="text-xs text-gray-600 mt-1">Generate with: wg genkey</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">Address <span class="text-red-400">*</span></label>
+                        <input type="text" id="wg-address"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition"
+                            placeholder="10.0.0.2/24">
+                        <p class="text-xs text-gray-600 mt-1">Your IP in the VPN network</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">DNS</label>
+                        <input type="text" id="wg-dns"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition"
+                            placeholder="8.8.8.8,8.8.4.4">
+                        <p class="text-xs text-gray-600 mt-1">DNS servers (optional)</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">Listen Port</label>
+                        <input type="text" id="wg-listen-port"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition"
+                            placeholder="51820">
+                        <p class="text-xs text-gray-600 mt-1">Only needed in server mode</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Peer section -->
+            <div>
+                <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    Peer
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">Public Key <span class="text-red-400">*</span></label>
+                        <input type="text" id="wg-peer-public-key"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition"
+                            placeholder="Peer's public key">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">Preshared Key</label>
+                        <input type="text" id="wg-preshared-key"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition"
+                            placeholder="Optional extra encryption layer">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">Endpoint</label>
+                        <input type="text" id="wg-endpoint"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition"
+                            placeholder="server.example.com:51820">
+                        <p class="text-xs text-gray-600 mt-1">host:port of the remote peer</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">Allowed IPs <span class="text-red-400">*</span></label>
+                        <input type="text" id="wg-allowed-ips"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition"
+                            placeholder="10.0.0.0/24 or 0.0.0.0/0">
+                        <p class="text-xs text-gray-600 mt-1">IPs routed through tunnel</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400 mb-1">Persistent Keepalive</label>
+                        <input type="text" id="wg-keepalive"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono focus:border-purple-500 focus:ring-1 focus:ring-purple-500/30 focus:outline-none transition"
+                            placeholder="25">
+                        <p class="text-xs text-gray-600 mt-1">Seconds between keepalives (NAT traversal)</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Save bar -->

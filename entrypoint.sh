@@ -166,18 +166,21 @@ done
 # ===========================================================================
 log_step "Configuring WireGuard..."
 
+# ---------------------------------------------------------------------------
+# WireGuard — persistent config at /data/user/config/wg0.conf
+#
+# Config source of truth is the persistent file, NOT env vars.
+# Env vars only bootstrap the initial config on first run.
+# After that, users edit the config via the admin panel form.
+# wg-quick accepts a full path, so no copy to /etc/wireguard/ needed.
+# ---------------------------------------------------------------------------
 WG_ENABLED=false
-if [ -z "${WG_PRIVATE_KEY:-}" ]; then
-    log_warn "WG_PRIVATE_KEY not set — WireGuard disabled"
-else
-    # wg-quick reads from /etc/wireguard/wg0.conf by convention.
-    # We generate it from environment variables on every start —
-    # env vars are the source of truth, not the file.
-    WG_CONF="/etc/wireguard/wg0.conf"
-    mkdir -p /etc/wireguard
+WG_CONF="${DATA}/user/config/wg0.conf"
 
-    # Optional fields — only include in config if env var is set.
-    # Empty lines in WG config are ignored, so blank vars are safe.
+if [ -n "${WG_PRIVATE_KEY:-}" ] && [ ! -f "$WG_CONF" ]; then
+    # First run with env vars — generate persistent config
+    log_info "Generating WireGuard config from environment variables..."
+
     WG_LISTEN_PORT_LINE=""
     [ -n "${WG_LISTEN_PORT:-}" ] && WG_LISTEN_PORT_LINE="ListenPort = ${WG_LISTEN_PORT}"
     WG_ENDPOINT_LINE=""
@@ -198,20 +201,14 @@ ${WG_ENDPOINT_LINE}
 AllowedIPs = ${WG_PEER_ALLOWED_IPS:-10.0.0.0/24}
 PersistentKeepalive = 25
 EOF
-    # Protect config — contains private key.
-    # SECURITY: chmod 640 root:www-data — the private key must never be world-readable.
-    # root owns the file; www-data (PHP-FPM) gets read access for the admin settings page.
-    chmod 640 "$WG_CONF"
-    chown root:www-data "$WG_CONF"
+fi
 
-    log_info "Starting WireGuard..."
-    # tee: output goes to both console (docker logs) and persistent log file
-    # Copy WireGuard config to user config dir for visibility
-    cp "$WG_CONF" "${DATA}/user/config/wg0.conf" 2>/dev/null || true
-    chmod 640 "${DATA}/user/config/wg0.conf" 2>/dev/null || true
-    chown root:www-data "${DATA}/user/config/wg0.conf" 2>/dev/null || true
+if [ -f "$WG_CONF" ]; then
+    # Config exists (from env vars, previous run, or admin panel) — start WG
+    chmod 600 "$WG_CONF"
+    log_info "Starting WireGuard from ${WG_CONF}..."
 
-    if wg-quick up wg0 2>&1 | tee -a "${DATA}/user/logs/wireguard.log"; then
+    if wg-quick up "$WG_CONF" 2>&1 | tee -a "${DATA}/user/logs/wireguard.log"; then
         WG_ENABLED=true
         log_info "WireGuard is up:"
         wg show wg0 | sed 's/^/  /'
@@ -219,6 +216,8 @@ EOF
         log_error "WireGuard failed to start! See user/logs/wireguard.log"
         log_error "Container will continue without VPN."
     fi
+else
+    log_warn "No WireGuard config found — configure via admin panel Settings > WireGuard"
 fi
 
 # ===========================================================================

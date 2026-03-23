@@ -39,10 +39,22 @@ class ServiceManager {
     }
 
     private function controlWg(string $action): array {
+        // WireGuard config lives at /data/user/config/wg0.conf (persistent).
+        // wg-quick accepts a full path — no need to copy to /etc/wireguard/.
+        $conf = USER_CONFIG_DIR . '/wg0.conf';
+
+        if (($action === 'up' || $action === 'restart') && !file_exists($conf)) {
+            return [
+                'success' => false,
+                'output' => "No WireGuard config found.\nFill in the WireGuard form and save, then click Up.",
+            ];
+        }
+
+        $escapedConf = escapeshellarg($conf);
         return match ($action) {
-            'up' => $this->run('sudo wg-quick up wg0 2>&1'),
+            'up' => $this->run("sudo wg-quick up $escapedConf 2>&1"),
             'down' => $this->run('sudo wg-quick down wg0 2>&1'),
-            'restart' => $this->run('sudo wg-quick down wg0 2>&1; sudo wg-quick up wg0 2>&1'),
+            'restart' => $this->run("sudo wg-quick down wg0 2>&1; sudo wg-quick up $escapedConf 2>&1"),
             'show' => $this->run('sudo wg show 2>&1'),
             default => ['success' => false, 'output' => "Unknown action: $action"],
         };

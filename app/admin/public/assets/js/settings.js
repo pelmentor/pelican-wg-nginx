@@ -1,7 +1,8 @@
-// Settings — config editor + service controls (Pelican Panel style)
+// Settings — config editor + WireGuard form + service controls
 
 const Settings = {
     activeTab: null,
+    advancedMode: false,
 
     async loadConfig(name) {
         // Update tab styles
@@ -16,15 +17,65 @@ const Settings = {
         activeTab.querySelector('.config-tab-indicator').style.opacity = '1';
 
         this.activeTab = name;
-        this.setStatus('Loading...');
-        const data = await api.get('/api/settings/config?file=' + name);
-        if (data && data.content !== undefined) {
-            document.getElementById('config-editor').value = data.content;
-            this.setStatus('');
+
+        if (name === 'wireguard' && !this.advancedMode) {
+            // Show WG form, hide raw editor
+            document.getElementById('config-editor-wrap').classList.add('hidden');
+            document.getElementById('wg-form').classList.remove('hidden');
+            await this.loadWgForm();
         } else {
-            document.getElementById('config-editor').value = data?.error || 'Failed to load config';
-            this.setStatus('Failed to load');
+            // Show raw editor, hide WG form
+            document.getElementById('config-editor-wrap').classList.remove('hidden');
+            document.getElementById('wg-form').classList.add('hidden');
+
+            this.setStatus('Loading...');
+            const data = await api.get('/api/settings/config?file=' + name);
+            if (data && data.content !== undefined) {
+                document.getElementById('config-editor').value = data.content;
+                this.setStatus('');
+            } else {
+                document.getElementById('config-editor').value = data?.error || 'Failed to load config';
+                this.setStatus('Failed to load');
+            }
         }
+    },
+
+    async loadWgForm() {
+        this.setStatus('Loading...');
+        const data = await api.get('/api/settings/wireguard');
+        if (!data) {
+            this.setStatus('Failed to load');
+            return;
+        }
+
+        document.getElementById('wg-private-key').value = data.interface?.private_key || '';
+        document.getElementById('wg-address').value = data.interface?.address || '';
+        document.getElementById('wg-dns').value = data.interface?.dns || '';
+        document.getElementById('wg-listen-port').value = data.interface?.listen_port || '';
+        document.getElementById('wg-peer-public-key').value = data.peer?.public_key || '';
+        document.getElementById('wg-preshared-key').value = data.peer?.preshared_key || '';
+        document.getElementById('wg-endpoint').value = data.peer?.endpoint || '';
+        document.getElementById('wg-allowed-ips').value = data.peer?.allowed_ips || '';
+        document.getElementById('wg-keepalive').value = data.peer?.persistent_keepalive || '';
+
+        if (!data.exists) {
+            this.setStatus('New config');
+            this.showOutput('Fill in your WireGuard details and click Save. Then click Up to connect.');
+        } else {
+            this.setStatus('');
+        }
+    },
+
+    toggleAdvanced() {
+        this.advancedMode = !this.advancedMode;
+        const btn = document.getElementById('wg-advanced-btn');
+        if (this.advancedMode) {
+            btn.textContent = 'Form editor';
+        } else {
+            btn.textContent = 'Raw editor';
+        }
+        // Reload the WG tab in the new mode
+        this.loadConfig('wireguard');
     },
 
     async saveConfig() {
@@ -32,9 +83,15 @@ const Settings = {
             alert('Select a config tab first');
             return;
         }
+
+        // WireGuard form mode — save structured fields
+        if (this.activeTab === 'wireguard' && !this.advancedMode) {
+            return this.saveWgForm();
+        }
+
+        // Raw editor mode — validate then save text
         const content = document.getElementById('config-editor').value;
 
-        // Validate before saving
         this.setStatus('Validating...');
         this.showOutput('Validating config...');
 
@@ -47,7 +104,6 @@ const Settings = {
             this.setStatus('Validation failed');
             this.showOutput('Validation failed: ' + (validation.output || 'Unknown error'));
 
-            // Ask user to confirm saving invalid config
             const proceed = confirm(
                 'Config validation failed:\n\n' +
                 (validation.output || 'Unknown error') +
@@ -62,7 +118,6 @@ const Settings = {
             this.showOutput('Validation passed: ' + (validation.output || 'OK'));
         }
 
-        // Proceed with save
         this.setStatus('Saving...');
         const result = await api.post('/api/settings/config', {
             file: this.activeTab,
@@ -71,6 +126,45 @@ const Settings = {
         if (result?.success) {
             this.setStatus('Saved');
             this.showOutput('Config saved successfully.');
+            setTimeout(() => this.setStatus(''), 3000);
+        } else {
+            this.setStatus('Error');
+            this.showOutput('Error: ' + (result?.error || 'Failed to save'));
+        }
+    },
+
+    async saveWgForm() {
+        const fields = {
+            interface: {
+                private_key: document.getElementById('wg-private-key').value.trim(),
+                address: document.getElementById('wg-address').value.trim(),
+                dns: document.getElementById('wg-dns').value.trim(),
+                listen_port: document.getElementById('wg-listen-port').value.trim(),
+            },
+            peer: {
+                public_key: document.getElementById('wg-peer-public-key').value.trim(),
+                preshared_key: document.getElementById('wg-preshared-key').value.trim(),
+                endpoint: document.getElementById('wg-endpoint').value.trim(),
+                allowed_ips: document.getElementById('wg-allowed-ips').value.trim(),
+                persistent_keepalive: document.getElementById('wg-keepalive').value.trim(),
+            },
+        };
+
+        // Client-side validation
+        if (!fields.interface.private_key) {
+            Toast.error('Private Key is required');
+            return;
+        }
+        if (!fields.interface.address) {
+            Toast.error('Address is required');
+            return;
+        }
+
+        this.setStatus('Saving...');
+        const result = await api.post('/api/settings/wireguard', fields);
+        if (result?.success) {
+            this.setStatus('Saved');
+            this.showOutput('WireGuard config saved. Click "Up" to connect.');
             setTimeout(() => this.setStatus(''), 3000);
         } else {
             this.setStatus('Error');
@@ -92,7 +186,7 @@ const Settings = {
         textEl.textContent = text;
         container.classList.remove('hidden');
         clearTimeout(this._outputTimer);
-        this._outputTimer = setTimeout(() => container.classList.add('hidden'), 10000);
+        this._outputTimer = setTimeout(() => container.classList.add('hidden'), 15000);
     },
 
     setStatus(text) {
