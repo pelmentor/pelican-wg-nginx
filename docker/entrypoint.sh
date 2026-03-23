@@ -49,7 +49,7 @@ cleanup() {
     kill -SIGQUIT "$PHP_FPM_PID" 2>/dev/null || true
     wait "$NGINX_PID" 2>/dev/null || true
     wait "$PHP_FPM_PID" 2>/dev/null || true
-    wg-quick down wg0 2>/dev/null || true
+    wg-quick down /tmp/wireguard/wg0.conf 2>/dev/null || true
     log_info "Shutdown complete."
     exit 0
 }
@@ -111,8 +111,10 @@ if [ -z "${WG_PRIVATE_KEY:-}" ]; then
     log_warn "WG_PRIVATE_KEY not set — WireGuard disabled"
     log_warn "Set WireGuard variables in Pelican Panel to enable VPN"
 else
-    WG_CONF="/etc/wireguard/wg0.conf"
-    mkdir -p /etc/wireguard
+    # /etc/wireguard is read-only in Pelican containers (non-root).
+    # Use /tmp which is always writable, then tell wg-quick the path.
+    WG_CONF="/tmp/wireguard/wg0.conf"
+    mkdir -p /tmp/wireguard
 
     # ListenPort — опционален. Без него WG работает как чистый клиент
     # (инициирует подключение, но не принимает входящие).
@@ -145,7 +147,8 @@ EOF
     chmod 600 "$WG_CONF"
 
     log_info "Starting WireGuard..."
-    if wg-quick up wg0 2>&1; then
+    # Pass full path — wg-quick accepts config file path directly
+    if wg-quick up "$WG_CONF" 2>&1; then
         WG_ENABLED=true
         log_info "WireGuard is up:"
         wg show wg0 | sed 's/^/  /'
