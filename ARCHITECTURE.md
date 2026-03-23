@@ -3,9 +3,9 @@
 ## Overview
 
 This Pelican Panel egg runs a container with three services:
-- **WireGuard** — VPN client for connecting to a remote Minecraft server
-- **Nginx** — web server for serving a Minecraft interactive map
-- **PHP-FPM** (PHP 8.1) — handles PHP scripts (if the map plugin uses a PHP backend)
+- **WireGuard** — VPN client for connecting to a remote host
+- **Nginx** — web server for serving web content
+- **PHP-FPM** (PHP 8.1) — handles PHP scripts (if the application uses a PHP backend)
 
 The base image is **Ubuntu 22.04 LTS** with packages installed via apt.
 
@@ -56,23 +56,23 @@ The base image is **Ubuntu 22.04 LTS** with packages installed via apt.
 |       Remote VDS            |
 |                             |
 |  +-----------------------+  |
-|  |   Minecraft server    |  |
-|  |   + map plugin        |  |
-|  |   (BlueMap/Dynmap)    |  |
+|  |    Remote server      |  |
+|  |    + application      |  |
+|  |                       |  |
 |  +-----------+-----------+  |
 |              |              |
-|   Pushes map tiles over WG  |
-|   tunnel (rsync/scp/http)   |
-|   to the wg0 internal IP    |
+|   Pushes files over WG     |
+|   tunnel (rsync/scp/http)  |
+|   to the wg0 internal IP   |
 +-----------------------------+
 ```
 
 ## Traffic Flows
 
-### 1. WireGuard Tunnel (MC server -> container)
+### 1. WireGuard Tunnel (remote server -> container)
 - **Protocol**: UDP
-- **Direction**: MC server on the VDS connects as a WG peer
-- **Purpose**: MC server pushes map data (tiles) through the WG tunnel
+- **Direction**: Remote server on the VDS connects as a WG peer
+- **Purpose**: Remote server pushes data (files) through the WG tunnel
 - **Port**: WG listens on the port assigned by Pelican (variable `SERVER_PORT`)
 - **Internal IP**: assigned via egg variables (e.g. `10.0.0.2/24`)
 
@@ -82,12 +82,12 @@ The base image is **Ubuntu 22.04 LTS** with packages installed via apt.
 - **Path**: Nginx listens on `0.0.0.0:SERVER_PORT` and serves static files from `/home/container/webroot`
 - **PHP**: requests for `.php` files are proxied to PHP-FPM via a unix socket
 
-### 3. Map Data Transfer (over the WG tunnel)
-- The MC server can push tiles via:
+### 3. Data Transfer (over the WG tunnel)
+- The remote server can push files via:
   - `rsync` over SSH through the WG tunnel
   - HTTP PUT/POST to an internal endpoint
   - `scp` directly into `/home/container/webroot/`
-- The specific method depends on the map plugin on the MC server side
+- The specific method depends on the application on the remote server side
 
 ## Ports
 
@@ -100,7 +100,7 @@ The base image is **Ubuntu 22.04 LTS** with packages installed via apt.
 
 ```
 /home/container/              <- root, managed via Pelican File Manager
-├── webroot/                  <- site documents (map tiles go here)
+├── webroot/                  <- site documents (served files go here)
 │   └── index.html
 ├── wg/
 │   └── wg0.conf              <- generated from egg variables at startup

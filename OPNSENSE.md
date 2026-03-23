@@ -5,9 +5,9 @@ This egg requires two ports to be forwarded.
 
 ## Required Port Forward Rules
 
-### 1. HTTP (web map)
+### 1. HTTP (web server)
 
-Allows users to access the map from the internet.
+Allows users to access the web server from the internet.
 
 | Parameter | Value |
 |-----------|-------|
@@ -23,7 +23,7 @@ Allows users to access the map from the internet.
 
 ### 2. WireGuard (VPN tunnel)
 
-Allows the MC server on the VDS to connect to the WG instance inside the container.
+Allows the remote server on the VDS to connect to the WG instance inside the container.
 Required **only if the container acts as a WG server** (listening for incoming connections).
 If the container connects to the VDS as a client, no port forward is needed.
 
@@ -60,7 +60,7 @@ User (browser)
                                                    webroot/index.html
 
 
-MC server (VDS)
+Remote server (VDS)
     |
     | WG UDP :51820
     v
