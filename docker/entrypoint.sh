@@ -109,7 +109,7 @@ cleanup() {
     kill -SIGQUIT "$PHP_FPM_PID" 2>/dev/null || true  # 3. Graceful php-fpm stop
     wait "$NGINX_PID" 2>/dev/null || true        # 4. Wait for nginx exit
     wait "$PHP_FPM_PID" 2>/dev/null || true      #    Wait for php-fpm exit
-    wg-quick down "$WG_CONF" 2>/dev/null || true # 5. Tear down WG interface
+    ip link del wg0 2>/dev/null || true          # 5. Tear down WG interface (raw, no sudo)
     log_info "Shutdown complete."
     exit 0
 }
@@ -239,8 +239,60 @@ EOF
     WG_LOG="${HC}/logs/wireguard.log"
 
     log_info "Starting WireGuard..."
-    # Log wg-quick output to both console and file for debugging
-    if wg-quick up "$WG_CONF" 2>&1 | tee -a "$WG_LOG"; then
+
+    # -----------------------------------------------------------------------
+    # Why raw wg/ip commands instead of wg-quick:
+    # wg-quick internally calls "sudo" which is blocked by Docker's
+    # "no-new-privileges" flag (set by Pelican Wings for security).
+    # Raw wg and ip commands work with just CAP_NET_ADMIN capability.
+    #
+    # This is equivalent to what wg-quick does:
+    #   1. ip link add wg0 type wireguard
+    #   2. wg setconf wg0 <config>
+    #   3. ip address add <address> dev wg0
+    #   4. ip link set wg0 up
+    #   5. ip route add <allowed_ips> dev wg0
+    # -----------------------------------------------------------------------
+
+    # Create a stripped config for wg setconf (no Address, no DNS — those
+    # are handled by ip commands, wg only understands [Interface] keys like
+    # PrivateKey, ListenPort and [Peer] sections)
+    WG_STRIPPED="${HC}/wg/.wg0-stripped.conf"
+    grep -v -E '^\s*(Address|DNS)\s*=' "$WG_CONF" > "$WG_STRIPPED"
+
+    # Extract address from config (e.g. "10.0.0.2/24")
+    WG_ADDR=$(grep -E '^\s*Address\s*=' "$WG_CONF" | head -1 | cut -d= -f2 | tr -d ' ' | cut -d, -f1)
+
+    (
+        set -e
+
+        # 1. Create WireGuard interface
+        ip link add wg0 type wireguard 2>&1
+
+        # 2. Apply WireGuard config (keys, peers, endpoints)
+        wg setconf wg0 "$WG_STRIPPED" 2>&1
+
+        # 3. Assign IP address
+        ip address add "$WG_ADDR" dev wg0 2>&1
+
+        # 4. Bring interface up
+        ip link set wg0 up 2>&1
+
+        # 5. Add routes for AllowedIPs
+        # Parse AllowedIPs from config and add a route for each
+        grep -E '^\s*AllowedIPs\s*=' "$WG_CONF" | cut -d= -f2 | tr ',' '\n' | tr -d ' ' | while read -r CIDR; do
+            [ -z "$CIDR" ] && continue
+            # Skip default routes — they would break container networking
+            if [ "$CIDR" = "0.0.0.0/0" ] || [ "$CIDR" = "::/0" ]; then
+                log_warn "Skipping default route $CIDR (would break container networking)"
+                continue
+            fi
+            ip route add "$CIDR" dev wg0 2>/dev/null || true
+        done
+
+    ) 2>&1 | tee -a "$WG_LOG"
+
+    if ip link show wg0 up >/dev/null 2>&1; then
         WG_ENABLED=true
         log_info "WireGuard is up:"
         wg show wg0 2>&1 | tee -a "$WG_LOG" | sed 's/^/  /'
@@ -450,17 +502,17 @@ while true; do
                 ;;
             "wg show"|"wg status")
                 if [ "$WG_ENABLED" = true ]; then
-                    sudo wg show 2>&1
+                    wg show 2>&1
                 else
                     log_warn "WireGuard is not enabled"
                 fi
                 ;;
             "wg peers")
                 if [ "$WG_ENABLED" = true ]; then
-                    sudo wg show wg0 peers 2>&1
-                    sudo wg show wg0 endpoints 2>&1
-                    sudo wg show wg0 latest-handshakes 2>&1
-                    sudo wg show wg0 transfer 2>&1
+                    wg show wg0 peers 2>&1
+                    wg show wg0 endpoints 2>&1
+                    wg show wg0 latest-handshakes 2>&1
+                    wg show wg0 transfer 2>&1
                 else
                     log_warn "WireGuard is not enabled"
                 fi
