@@ -3,6 +3,27 @@
 <div class="flex flex-col" style="height: calc(100vh - 3rem);">
     <!-- Terminal container -->
     <div class="flex-1 flex flex-col bg-gray-900 rounded-xl border border-gray-800 overflow-hidden min-h-0">
+        <!-- Search bar (Ctrl+F) — hidden by default -->
+        <div id="terminal-search-bar" class="hidden flex items-center gap-2 px-3 py-1.5 bg-gray-800 border-b border-gray-700">
+            <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <input
+                id="terminal-search-input"
+                type="text"
+                class="flex-1 bg-gray-900 text-gray-100 text-sm px-2 py-1 rounded border border-gray-700 focus:outline-none focus:border-blue-500 font-mono"
+                placeholder="Search terminal..."
+                autocomplete="off"
+                spellcheck="false"
+            >
+            <span id="terminal-search-info" class="text-xs text-gray-500 min-w-[70px]"></span>
+            <button id="terminal-search-close" class="text-gray-500 hover:text-gray-300 p-0.5" title="Close (Esc)">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
         <!-- Terminal output -->
         <div id="terminal" class="flex-1 w-full min-h-0"></div>
 
@@ -21,12 +42,19 @@
                 autocomplete="off"
                 spellcheck="false"
             >
+            <button
+                id="clear-terminal-btn"
+                class="text-gray-600 hover:text-gray-300 px-3 py-2 text-xs font-mono transition-colors"
+                title="Clear terminal"
+            >Clear</button>
         </div>
     </div>
 
     <!-- Hint text -->
     <p class="text-xs text-gray-600 mt-3 px-1">
         Type <code class="text-gray-500 bg-gray-900 px-1.5 py-0.5 rounded text-xs font-mono">help</code> for available commands.
+        <code class="text-gray-500 bg-gray-900 px-1.5 py-0.5 rounded text-xs font-mono">clear</code> to reset the terminal.
+        <code class="text-gray-500 bg-gray-900 px-1.5 py-0.5 rounded text-xs font-mono">Ctrl+F</code> to search.
         Error logs from Nginx and PHP-FPM stream in real time.
     </p>
 </div>

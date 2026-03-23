@@ -103,4 +103,83 @@ class FilesController {
             echo $e->getMessage();
         }
     }
+
+    public function copy(): void {
+        header('Content-Type: application/json');
+        try {
+            $input = json_decode(file_get_contents('php://input'), true);
+            $this->fm->copy($input['path']);
+            echo json_encode(['success' => true]);
+        } catch (Throwable $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function compress(): void {
+        header('Content-Type: application/json');
+        try {
+            $input = json_decode(file_get_contents('php://input'), true);
+            $files = $input['files'] ?? [$input['path'] ?? ''];
+            $name = $input['name'] ?? 'archive';
+            $dir = $input['path'] ?? '/';
+            $this->fm->compress($dir, $files, $name);
+            echo json_encode(['success' => true]);
+        } catch (Throwable $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function decompress(): void {
+        header('Content-Type: application/json');
+        try {
+            $input = json_decode(file_get_contents('php://input'), true);
+            $this->fm->decompress($input['path']);
+            echo json_encode(['success' => true]);
+        } catch (Throwable $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function chmodPath(): void {
+        header('Content-Type: application/json');
+        try {
+            $input = json_decode(file_get_contents('php://input'), true);
+            $this->fm->chmod($input['path'], $input['mode']);
+            echo json_encode(['success' => true]);
+        } catch (Throwable $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function search(): void {
+        header('Content-Type: application/json');
+        try {
+            $path = $_GET['path'] ?? '/';
+            $query = $_GET['query'] ?? '';
+            if (strlen($query) < 1) {
+                echo json_encode(['results' => []]);
+                return;
+            }
+            echo json_encode(['results' => $this->fm->search($path, $query)]);
+        } catch (Throwable $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function createFile(): void {
+        header('Content-Type: application/json');
+        try {
+            $input = json_decode(file_get_contents('php://input'), true);
+            $this->fm->createFile($input['path']);
+            echo json_encode(['success' => true]);
+        } catch (Throwable $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    }
 }

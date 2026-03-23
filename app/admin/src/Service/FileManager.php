@@ -116,6 +116,112 @@ class FileManager {
         exit;
     }
 
+    public function copy(string $from): void {
+        $full = $this->resolve($from);
+        $dir = dirname($full);
+        $basename = pathinfo($full, PATHINFO_FILENAME);
+        $ext = pathinfo($full, PATHINFO_EXTENSION);
+        $suffix = $ext !== '' ? '.' . $ext : '';
+        $dest = $dir . '/' . $basename . ' - Copy' . $suffix;
+
+        // Ensure unique name
+        $i = 2;
+        while (file_exists($dest)) {
+            $dest = $dir . '/' . $basename . ' - Copy (' . $i . ')' . $suffix;
+            $i++;
+        }
+
+        if (is_dir($full)) {
+            $this->copyDir($full, $dest);
+        } else {
+            copy($full, $dest);
+        }
+    }
+
+    public function compress(string $dir, array $files, string $archiveName): void {
+        $baseDir = $dir === '/' || $dir === '' ? $this->root : $this->resolve($dir);
+        if (!is_dir($baseDir)) throw new RuntimeException('Not a directory');
+
+        if (!class_exists('ZipArchive')) {
+            throw new RuntimeException('ZipArchive extension not available');
+        }
+
+        // Sanitize archive name
+        $archiveName = preg_replace('/[^\w.\-]/', '_', $archiveName);
+        if (!str_ends_with($archiveName, '.zip')) {
+            $archiveName .= '.zip';
+        }
+        $zipPath = $baseDir . '/' . $archiveName;
+
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            throw new RuntimeException('Cannot create zip archive');
+        }
+
+        foreach ($files as $file) {
+            $filePath = $baseDir . '/' . basename($file);
+            if (!file_exists($filePath) || !str_starts_with(realpath($filePath), $this->root)) {
+                continue;
+            }
+            if (is_dir($filePath)) {
+                $this->addDirToZip($zip, $filePath, basename($file));
+            } else {
+                $zip->addFile($filePath, basename($file));
+            }
+        }
+
+        $zip->close();
+    }
+
+    public function decompress(string $path): void {
+        $full = $this->resolve($path);
+        if (!is_file($full)) throw new RuntimeException('Not a file');
+        if (!str_ends_with(strtolower($full), '.zip')) {
+            throw new RuntimeException('Only .zip files are supported');
+        }
+
+        if (!class_exists('ZipArchive')) {
+            throw new RuntimeException('ZipArchive extension not available');
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($full) !== true) {
+            throw new RuntimeException('Cannot open zip archive');
+        }
+
+        $extractDir = dirname($full);
+        $zip->extractTo($extractDir);
+        $zip->close();
+    }
+
+    public function chmod(string $path, string $mode): void {
+        $full = $this->resolve($path);
+        $octal = octdec($mode);
+        if ($octal < 0 || $octal > 07777) {
+            throw new RuntimeException('Invalid permissions mode');
+        }
+        if (!chmod($full, $octal)) {
+            throw new RuntimeException('Failed to change permissions');
+        }
+    }
+
+    public function search(string $dir, string $query): array {
+        $baseDir = $dir === '/' || $dir === '' ? $this->root : $this->resolve($dir);
+        if (!is_dir($baseDir)) throw new RuntimeException('Not a directory');
+
+        $results = [];
+        $this->searchRecursive($baseDir, strtolower($query), $baseDir, $results);
+        return $results;
+    }
+
+    public function createFile(string $path): void {
+        $full = $this->resolveNew($path);
+        if (file_exists($full)) {
+            throw new RuntimeException('File already exists');
+        }
+        file_put_contents($full, '');
+    }
+
     private function deleteDir(string $dir): void {
         foreach (scandir($dir) as $item) {
             if ($item === '.' || $item === '..') continue;
@@ -123,5 +229,55 @@ class FileManager {
             is_dir($path) ? $this->deleteDir($path) : unlink($path);
         }
         rmdir($dir);
+    }
+
+    private function copyDir(string $src, string $dst): void {
+        mkdir($dst, 0755, true);
+        foreach (scandir($src) as $item) {
+            if ($item === '.' || $item === '..') continue;
+            $s = $src . '/' . $item;
+            $d = $dst . '/' . $item;
+            is_dir($s) ? $this->copyDir($s, $d) : copy($s, $d);
+        }
+    }
+
+    private function addDirToZip(\ZipArchive $zip, string $dir, string $prefix): void {
+        $zip->addEmptyDir($prefix);
+        foreach (scandir($dir) as $item) {
+            if ($item === '.' || $item === '..') continue;
+            $fullPath = $dir . '/' . $item;
+            $zipPath = $prefix . '/' . $item;
+            if (is_dir($fullPath)) {
+                $this->addDirToZip($zip, $fullPath, $zipPath);
+            } else {
+                $zip->addFile($fullPath, $zipPath);
+            }
+        }
+    }
+
+    private function searchRecursive(string $dir, string $query, string $baseDir, array &$results, int $limit = 100): void {
+        if (count($results) >= $limit) return;
+
+        foreach (scandir($dir) as $item) {
+            if ($item === '.' || $item === '..') continue;
+            if (count($results) >= $limit) return;
+
+            $fullPath = $dir . '/' . $item;
+            $relativePath = '/' . ltrim(str_replace($this->root, '', $fullPath), '/');
+
+            if (str_contains(strtolower($item), $query)) {
+                $results[] = [
+                    'name' => $item,
+                    'path' => $relativePath,
+                    'type' => is_dir($fullPath) ? 'directory' : 'file',
+                    'size' => is_file($fullPath) ? filesize($fullPath) : 0,
+                    'modified' => filemtime($fullPath),
+                ];
+            }
+
+            if (is_dir($fullPath)) {
+                $this->searchRecursive($fullPath, $query, $baseDir, $results, $limit);
+            }
+        }
     }
 }

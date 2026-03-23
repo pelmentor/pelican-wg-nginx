@@ -46,6 +46,12 @@ class ConsoleController {
             return;
         }
 
+        // Client-side 'clear' is handled in JS, but respond gracefully if sent
+        if ($cmd === 'clear') {
+            echo json_encode(['output' => 'Terminal cleared.']);
+            return;
+        }
+
         // Ping — validate host to prevent injection
         if (preg_match('/^ping\s+([\w.\-:]+)$/', $cmd, $m)) {
             $output = shell_exec('ping -c 4 -W 3 ' . escapeshellarg($m[1]) . ' 2>&1');
@@ -95,6 +101,7 @@ Available commands:
   logs access       — last 30 lines of access log
   logs error        — last 30 lines of error log
   phpinfo           — PHP version and extensions
+  clear             — clear the terminal screen
 HELP;
     }
 }

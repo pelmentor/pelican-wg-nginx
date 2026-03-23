@@ -12,6 +12,21 @@
 
     <!-- Action buttons -->
     <div class="flex items-center gap-2">
+        <!-- Search input -->
+        <div class="relative">
+            <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <input type="text" placeholder="Search files..." oninput="handleSearch(this)"
+                class="pl-8 pr-3 py-1.5 text-xs text-gray-300 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-gray-600 w-44 placeholder-gray-600 transition">
+        </div>
+
+        <button onclick="FileManager.createFile()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            New File
+        </button>
         <button onclick="FileManager.newFolder()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
@@ -49,11 +64,12 @@
                 <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                 <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Size</th>
                 <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-44">Modified</th>
-                <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-28 text-right">Actions</th>
+                <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Perms</th>
+                <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-56 text-right">Actions</th>
             </tr>
         </thead>
         <tbody id="file-list" class="divide-y divide-gray-800">
-            <tr><td colspan="4" class="px-4 py-12 text-center text-gray-600 text-sm">Loading...</td></tr>
+            <tr><td colspan="5" class="px-4 py-12 text-center text-gray-600 text-sm">Loading...</td></tr>
         </tbody>
     </table>
 </div>

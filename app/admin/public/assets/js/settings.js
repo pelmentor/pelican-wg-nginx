@@ -33,6 +33,36 @@ const Settings = {
             return;
         }
         const content = document.getElementById('config-editor').value;
+
+        // Validate before saving
+        this.setStatus('Validating...');
+        this.showOutput('Validating config...');
+
+        const validation = await api.post('/api/settings/validate', {
+            file: this.activeTab,
+            content: content,
+        });
+
+        if (validation && !validation.valid) {
+            this.setStatus('Validation failed');
+            this.showOutput('Validation failed: ' + (validation.output || 'Unknown error'));
+
+            // Ask user to confirm saving invalid config
+            const proceed = confirm(
+                'Config validation failed:\n\n' +
+                (validation.output || 'Unknown error') +
+                '\n\nSave anyway?'
+            );
+            if (!proceed) {
+                this.setStatus('Cancelled');
+                setTimeout(() => this.setStatus(''), 3000);
+                return;
+            }
+        } else if (validation && validation.valid) {
+            this.showOutput('Validation passed: ' + (validation.output || 'OK'));
+        }
+
+        // Proceed with save
         this.setStatus('Saving...');
         const result = await api.post('/api/settings/config', {
             file: this.activeTab,

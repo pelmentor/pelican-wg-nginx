@@ -10,6 +10,7 @@
 
 const PRELUDE = '\x1b[1m\x1b[33mwg-nginx ~ \x1b[0m';
 const ERROR_STYLE = '\x1b[1m\x1b[31m';
+const WARN_STYLE = '\x1b[1m\x1b[33m';
 const INFO_STYLE = '\x1b[1m\x1b[32m';
 const RESET = '\x1b[0m';
 
@@ -42,6 +43,7 @@ const terminal = new Terminal({
     lineHeight: 1.2,
     disableStdin: true,
     cursorStyle: 'underline',
+    cursorInactiveStyle: 'underline',
     allowTransparency: true,
     rows: 25,
     theme: theme,
@@ -49,14 +51,30 @@ const terminal = new Terminal({
 
 const fitAddon = new FitAddon.FitAddon();
 terminal.loadAddon(fitAddon);
+
+// Try to load WebLinksAddon if available (graceful fallback)
+try {
+    if (typeof WebLinksAddon !== 'undefined' && WebLinksAddon.WebLinksAddon) {
+        const webLinksAddon = new WebLinksAddon.WebLinksAddon();
+        terminal.loadAddon(webLinksAddon);
+    }
+} catch (_) {
+    // WebLinksAddon not available — links won't be clickable, no big deal
+}
+
 terminal.open(document.getElementById('terminal'));
 fitAddon.fit();
 window.addEventListener('resize', () => fitAddon.fit());
 
-// Ctrl+C = copy selection
+// Ctrl+C = copy selection, Ctrl+F = open search
 terminal.attachCustomKeyEventHandler((event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
         navigator.clipboard.writeText(terminal.getSelection());
+        return false;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+        event.preventDefault();
+        toggleSearch(true);
         return false;
     }
     return true;
@@ -66,14 +84,101 @@ terminal.writeln(PRELUDE + INFO_STYLE + 'Console ready. Polling logs every 2s...
 terminal.writeln(PRELUDE + 'Type commands below. Use "help" for available commands.' + RESET);
 terminal.writeln('');
 
-// Log polling — tracks byte positions per file, fetches only new data
+// --- In-terminal search (Ctrl+F) ---
+const searchBar = document.getElementById('terminal-search-bar');
+const searchInput = document.getElementById('terminal-search-input');
+const searchInfo = document.getElementById('terminal-search-info');
+
+function toggleSearch(open) {
+    if (!searchBar) return;
+    if (open) {
+        searchBar.classList.remove('hidden');
+        searchInput.focus();
+        searchInput.select();
+    } else {
+        searchBar.classList.add('hidden');
+        searchInput.value = '';
+        searchInfo.textContent = '';
+    }
+}
+
+function getTerminalText() {
+    const buffer = terminal.buffer.active;
+    const lines = [];
+    for (let i = 0; i < buffer.length; i++) {
+        const line = buffer.getLine(i);
+        if (line) lines.push(line.translateToString(true));
+    }
+    return lines;
+}
+
+function doSearch() {
+    const query = searchInput.value.trim().toLowerCase();
+    if (!query) {
+        searchInfo.textContent = '';
+        return;
+    }
+    const lines = getTerminalText();
+    let matches = 0;
+    let lastMatchRow = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].toLowerCase().includes(query)) {
+            matches++;
+            lastMatchRow = i;
+        }
+    }
+    searchInfo.textContent = matches > 0 ? `${matches} match${matches > 1 ? 'es' : ''}` : 'No matches';
+    // Scroll to the last match so user sees the most recent occurrence
+    if (lastMatchRow >= 0) {
+        terminal.scrollToLine(Math.max(0, lastMatchRow - 5));
+    }
+}
+
+if (searchInput) {
+    searchInput.addEventListener('input', doSearch);
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            toggleSearch(false);
+        }
+        if (e.key === 'Enter') {
+            doSearch();
+        }
+    });
+}
+
+// Close search button
+const searchClose = document.getElementById('terminal-search-close');
+if (searchClose) {
+    searchClose.addEventListener('click', () => toggleSearch(false));
+}
+
+// Global Ctrl+F capture (when focus is outside terminal)
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        // Only intercept on the console page
+        if (document.getElementById('terminal')) {
+            e.preventDefault();
+            toggleSearch(true);
+        }
+    }
+});
+
+// --- Log polling — tracks byte positions per file, fetches only new data ---
 let logPositions = {};
+let pollFailCount = 0;
 
 async function pollLogs() {
     try {
         const posParam = encodeURIComponent(JSON.stringify(logPositions));
         const data = await api.get('/api/console/poll?positions=' + posParam);
-        if (!data) return;
+        if (!data) {
+            pollFailCount++;
+            showPollWarning();
+            return;
+        }
+
+        // Reset fail counter on success
+        pollFailCount = 0;
 
         // Update positions for next poll
         logPositions = data.positions;
@@ -90,7 +195,16 @@ async function pollLogs() {
             });
         }
     } catch (e) {
-        // Silent — will retry on next poll
+        pollFailCount++;
+        showPollWarning();
+    }
+}
+
+function showPollWarning() {
+    if (pollFailCount === 3) {
+        terminal.writeln('');
+        terminal.writeln(PRELUDE + WARN_STYLE + '[WARN] Log polling failed \u2014 retrying...' + RESET);
+        terminal.writeln('');
     }
 }
 
@@ -98,10 +212,16 @@ async function pollLogs() {
 pollLogs();
 setInterval(pollLogs, 2000);
 
-// Command input
+// --- Command input with persistent history ---
 const cmdInput = document.getElementById('command-input');
-const cmdHistory = [];
+
+// Restore command history from localStorage
+const cmdHistory = JSON.parse(localStorage.getItem('wg-console-history')) || [];
 let historyIndex = -1;
+
+function saveHistory() {
+    localStorage.setItem('wg-console-history', JSON.stringify(cmdHistory.slice(0, 50)));
+}
 
 cmdInput.addEventListener('keydown', async (e) => {
     if (e.key === 'Enter') {
@@ -111,6 +231,15 @@ cmdInput.addEventListener('keydown', async (e) => {
         cmdHistory.unshift(cmd);
         historyIndex = -1;
         cmdInput.value = '';
+        saveHistory();
+
+        // Handle client-side 'clear' command
+        if (cmd === 'clear') {
+            terminal.clear();
+            terminal.writeln(PRELUDE + INFO_STYLE + 'Terminal cleared.' + RESET);
+            terminal.writeln('');
+            return;
+        }
 
         terminal.writeln('');
         terminal.writeln(PRELUDE + '$ ' + cmd);
@@ -144,3 +273,13 @@ cmdInput.addEventListener('keydown', async (e) => {
         }
     }
 });
+
+// --- Clear button ---
+const clearBtn = document.getElementById('clear-terminal-btn');
+if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+        terminal.clear();
+        terminal.writeln(PRELUDE + INFO_STYLE + 'Terminal cleared.' + RESET);
+        terminal.writeln('');
+    });
+}

@@ -53,10 +53,17 @@ $router->post('/api/files/delete', [FilesController::class, 'delete']);
 $router->post('/api/files/rename', [FilesController::class, 'renamePath']);
 $router->post('/api/files/mkdir', [FilesController::class, 'mkdirPath']);
 $router->get('/api/files/download', [FilesController::class, 'download']);
+$router->post('/api/files/copy', [FilesController::class, 'copy']);
+$router->post('/api/files/compress', [FilesController::class, 'compress']);
+$router->post('/api/files/decompress', [FilesController::class, 'decompress']);
+$router->post('/api/files/chmod', [FilesController::class, 'chmodPath']);
+$router->get('/api/files/search', [FilesController::class, 'search']);
+$router->post('/api/files/create', [FilesController::class, 'createFile']);
 
 // API — Settings
 $router->get('/api/settings/config', [SettingsController::class, 'getConfig']);
 $router->post('/api/settings/config', [SettingsController::class, 'saveConfig']);
+$router->post('/api/settings/validate', [SettingsController::class, 'validateConfig']);
 $router->post('/api/settings/service', [SettingsController::class, 'serviceAction']);
 $router->get('/api/settings/status', [SettingsController::class, 'serviceStatus']);
 
