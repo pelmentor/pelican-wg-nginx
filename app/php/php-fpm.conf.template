@@ -3,7 +3,11 @@ error_log = {{DATA}}/logs/php-fpm-error.log
 daemonize = no
 
 [www]
+user = www-data
+group = www-data
 listen = {{DATA}}/tmp/php-fpm.sock
+listen.owner = www-data
+listen.group = www-data
 listen.mode = 0660
 
 pm = ondemand
