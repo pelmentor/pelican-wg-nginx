@@ -90,6 +90,17 @@ class UserController {
 
         try {
             UserManager::update($id, $fields);
+
+            // Optionally set a new password (from the edit modal)
+            if (!empty($input['password'])) {
+                if (strlen($input['password']) < 8) {
+                    http_response_code(400);
+                    echo json_encode(['error' => 'Password must be at least 8 characters']);
+                    return;
+                }
+                UserManager::setPassword($id, $input['password']);
+            }
+
             ActivityLog::log('user.update', 'Updated user: ' . $id);
             echo json_encode(['success' => true]);
         } catch (RuntimeException $e) {

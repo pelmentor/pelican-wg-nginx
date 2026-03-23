@@ -85,7 +85,7 @@ const UserManager = {
         if (!username) { Toast.error('Username is required'); return; }
         if (!password) { Toast.error('Password is required'); return; }
 
-        const result = await api.post('/api/users/create', { username, password, role });
+        const result = await api.post('/api/users', { username, password, role });
         if (result && !result.error) {
             Toast.success('User created successfully');
             this.closeModal('create-user-modal');
@@ -99,7 +99,7 @@ const UserManager = {
         const user = this.users.find(u => u.username === username);
         if (!user) return;
 
-        document.getElementById('edit-original-username').value = user.username;
+        document.getElementById('edit-user-id').value = user.id;
         document.getElementById('edit-username').value = user.username;
         document.getElementById('edit-role').value = user.role;
         document.getElementById('edit-password').value = '';
@@ -107,14 +107,14 @@ const UserManager = {
     },
 
     async saveUser() {
-        const originalUsername = document.getElementById('edit-original-username').value;
+        const id = document.getElementById('edit-user-id').value;
         const username = document.getElementById('edit-username').value.trim();
         const role = document.getElementById('edit-role').value;
         const password = document.getElementById('edit-password').value;
 
         if (!username) { Toast.error('Username is required'); return; }
 
-        const payload = { original_username: originalUsername, username, role };
+        const payload = { id, username, role };
         if (password) payload.password = password;
 
         const result = await api.post('/api/users/update', payload);
@@ -130,7 +130,10 @@ const UserManager = {
     async deleteUser(username) {
         if (!confirm(`Delete user "${username}"? This action cannot be undone.`)) return;
 
-        const result = await api.post('/api/users/delete', { username });
+        const user = this.users.find(u => u.username === username);
+        if (!user) { Toast.error('User not found'); return; }
+
+        const result = await api.post('/api/users/delete', { id: user.id });
         if (result && !result.error) {
             Toast.success('User deleted successfully');
             this.load();
@@ -157,7 +160,7 @@ const UserManager = {
         if (newPassword !== confirmPassword) { Toast.error('Passwords do not match'); return; }
         if (newPassword.length < 6) { Toast.error('Password must be at least 6 characters'); return; }
 
-        const result = await api.post('/api/users/change-password', {
+        const result = await api.post('/api/users/password', {
             current_password: currentPassword,
             new_password: newPassword,
         });

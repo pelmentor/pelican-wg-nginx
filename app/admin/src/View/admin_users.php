@@ -91,7 +91,7 @@
             </button>
         </div>
         <div class="p-5 space-y-4">
-            <input type="hidden" id="edit-original-username">
+            <input type="hidden" id="edit-user-id">
             <div>
                 <label class="block text-sm font-medium text-gray-400 mb-1.5">Username</label>
                 <input type="text" id="edit-username" class="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-lg text-white text-sm placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/40 transition">
