@@ -26,9 +26,19 @@ function getCsrfToken() {
 // Global helpers
 const api = {
     async get(url) {
-        const res = await fetch(url);
-        if (res.status === 401) { window.location = '/login'; return null; }
-        return res.json();
+        try {
+            const res = await fetch(url);
+            if (res.status === 401) { window.location = '/login'; return null; }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                console.warn(`[api.get] ${url} returned ${res.status}:`, err);
+                return err;
+            }
+            return await res.json();
+        } catch (e) {
+            console.warn(`[api.get] ${url} failed:`, e);
+            return null;
+        }
     },
     async post(url, data) {
         const res = await fetch(url, {

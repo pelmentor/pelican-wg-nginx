@@ -4,82 +4,104 @@
 let prevNetwork = null;
 let prevTime = null;
 
+// Helper: safely set textContent on an element by ID
+function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+}
+
+// Helper: safely set innerHTML on an element by ID
+function setHtml(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = value;
+}
+
+// Helper: safely set a style property on an element by ID
+function setWidth(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.style.width = value;
+}
+
 async function updateStats() {
-    const data = await api.get('/api/stats');
-    if (!data) return;
-    const now = Date.now();
+    try {
+        const data = await api.get('/api/stats');
+        if (!data) return;
+        const now = Date.now();
 
-    // ── Services ──
-    const svc = data.services;
-    setServiceStatus('nginx', svc.nginx);
-    setServiceStatus('phpfpm', svc['php-fpm']);
-    setServiceStatus('wg', svc.wireguard);
+        // ── Services ──
+        const svc = data.services || {};
+        setServiceStatus('nginx', svc.nginx);
+        setServiceStatus('phpfpm', svc['php-fpm']);
+        setServiceStatus('wg', svc.wireguard);
 
-    // ── CPU ──
-    const cpuPct = parseFloat(data.cpu.percent) || 0;
-    document.getElementById('stat-cpu').textContent = cpuPct.toFixed(2) + ' %';
-    document.getElementById('stat-cpu-limit').innerHTML = '/ &infin;';
-    document.getElementById('bar-cpu').style.width = Math.min(cpuPct, 100) + '%';
+        // ── CPU ──
+        const cpuPct = parseFloat(data.cpu?.percent) || 0;
+        setText('stat-cpu', cpuPct.toFixed(2) + ' %');
+        setHtml('stat-cpu-limit', '/ &infin;');
+        setWidth('bar-cpu', Math.min(cpuPct, 100) + '%');
 
-    // ── Memory ──
-    const memUsed = parseFloat(data.memory.used_mb) || 0;
-    const memTotal = parseFloat(data.memory.total_mb) || 0;
-    document.getElementById('stat-memory').textContent = memUsed.toFixed(2) + ' MiB';
-    if (memTotal > 0) {
-        document.getElementById('stat-memory-limit').textContent = '/ ' + memTotal.toFixed(0) + ' MiB';
-    } else {
-        document.getElementById('stat-memory-limit').innerHTML = '/ &infin;';
-    }
-    document.getElementById('bar-memory').style.width = data.memory.percent + '%';
-
-    // ── Disk ──
-    const diskUsed = parseFloat(data.disk.used_gb) || 0;
-    const diskTotal = parseFloat(data.disk.total_gb) || 0;
-    document.getElementById('stat-disk').textContent = diskUsed.toFixed(2) + ' GiB';
-    document.getElementById('stat-disk-limit').textContent = '/ ' + diskTotal.toFixed(2) + ' GiB';
-    document.getElementById('bar-disk').style.width = data.disk.percent + '%';
-
-    // ── Network ──
-    const net = data.network.eth0 || {};
-    const rxBytes = net.rx_bytes || 0;
-    const txBytes = net.tx_bytes || 0;
-
-    if (prevNetwork && prevTime) {
-        const elapsed = (now - prevTime) / 1000; // seconds
-        if (elapsed > 0) {
-            const rxRate = (rxBytes - prevNetwork.rx_bytes) / elapsed;
-            const txRate = (txBytes - prevNetwork.tx_bytes) / elapsed;
-            document.getElementById('stat-net-rx').textContent = formatKiB(rxRate) + '/s';
-            document.getElementById('stat-net-tx').textContent = formatKiB(txRate) + '/s';
-
-            // Animated bar — scale relative to 10 MiB/s for visual feedback
-            const maxRate = 10 * 1024 * 1024;
-            const combinedRate = rxRate + txRate;
-            const netPct = Math.min((combinedRate / maxRate) * 100, 100);
-            document.getElementById('bar-network').style.width = netPct + '%';
+        // ── Memory ──
+        const memUsed = parseFloat(data.memory?.used_mb) || 0;
+        const memTotal = parseFloat(data.memory?.total_mb) || 0;
+        setText('stat-memory', memUsed.toFixed(2) + ' MiB');
+        if (memTotal > 0) {
+            setText('stat-memory-limit', '/ ' + memTotal.toFixed(0) + ' MiB');
+        } else {
+            setHtml('stat-memory-limit', '/ &infin;');
         }
-    }
+        setWidth('bar-memory', (data.memory?.percent || 0) + '%');
 
-    document.getElementById('stat-net-total').innerHTML =
-        'Total: &darr; ' + formatBytesIEC(rxBytes) + ' &uarr; ' + formatBytesIEC(txBytes);
+        // ── Disk ──
+        const diskUsed = parseFloat(data.disk?.used_gb) || 0;
+        const diskTotal = parseFloat(data.disk?.total_gb) || 0;
+        setText('stat-disk', diskUsed.toFixed(2) + ' GiB');
+        setText('stat-disk-limit', '/ ' + diskTotal.toFixed(2) + ' GiB');
+        setWidth('bar-disk', (data.disk?.percent || 0) + '%');
 
-    prevNetwork = { rx_bytes: rxBytes, tx_bytes: txBytes };
-    prevTime = now;
+        // ── Network ──
+        const net = (data.network || {}).eth0 || {};
+        const rxBytes = net.rx_bytes || 0;
+        const txBytes = net.tx_bytes || 0;
 
-    // ── Uptime (header) ──
-    const uptimeStr = formatUptimeShort(data.uptime);
-    const headerUptime = document.getElementById('header-uptime');
-    if (headerUptime) {
-        headerUptime.textContent = '(' + uptimeStr + ')';
+        if (prevNetwork && prevTime) {
+            const elapsed = (now - prevTime) / 1000; // seconds
+            if (elapsed > 0) {
+                const rxRate = (rxBytes - prevNetwork.rx_bytes) / elapsed;
+                const txRate = (txBytes - prevNetwork.tx_bytes) / elapsed;
+                setText('stat-net-rx', formatKiB(rxRate) + '/s');
+                setText('stat-net-tx', formatKiB(txRate) + '/s');
+
+                // Animated bar — scale relative to 10 MiB/s for visual feedback
+                const maxRate = 10 * 1024 * 1024;
+                const combinedRate = rxRate + txRate;
+                const netPct = Math.min((combinedRate / maxRate) * 100, 100);
+                setWidth('bar-network', netPct + '%');
+            }
+        }
+
+        setHtml('stat-net-total',
+            'Total: &darr; ' + formatBytesIEC(rxBytes) + ' &uarr; ' + formatBytesIEC(txBytes));
+
+        prevNetwork = { rx_bytes: rxBytes, tx_bytes: txBytes };
+        prevTime = now;
+
+        // ── Uptime (header) ──
+        if (data.uptime) {
+            const uptimeStr = formatUptimeShort(data.uptime);
+            setText('header-uptime', '(' + uptimeStr + ')');
+        }
+    } catch (e) {
+        console.warn('[dashboard] stats update failed:', e);
     }
 }
 
 /**
- * Set service status dot + text
+ * Set service status dot + text — with null safety
  */
 function setServiceStatus(id, running) {
     const dot = document.getElementById(`status-${id}`);
     const text = document.getElementById(`status-${id}-text`);
+    if (!dot || !text) return;
 
     if (running) {
         dot.innerHTML =
@@ -183,31 +205,41 @@ function dashEscapeHtml(str) {
 }
 
 async function loadDashboardActivity() {
-    const data = await api.get('/api/activity?limit=10');
-    if (!data) return;
-
     const container = document.getElementById('dashboard-activity');
-    const entries = data.entries || [];
+    if (!container) return;
 
-    if (entries.length === 0) {
-        container.innerHTML = '<div class="px-5 py-6 text-center text-sm text-gray-500">No recent activity.</div>';
-        return;
+    try {
+        const data = await api.get('/api/activity?limit=10');
+        if (!data) {
+            container.innerHTML = '<div class="px-5 py-6 text-center text-sm text-gray-500">No recent activity.</div>';
+            return;
+        }
+
+        const entries = data.entries || [];
+
+        if (entries.length === 0) {
+            container.innerHTML = '<div class="px-5 py-6 text-center text-sm text-gray-500">No recent activity.</div>';
+            return;
+        }
+
+        container.innerHTML = entries.map(e => {
+            const label = dashActivityLabels[e.action] || e.action;
+            const color = dashActivityColors[e.action] || 'text-gray-400';
+            const detail = e.detail ? dashEscapeHtml(e.detail) : '';
+            const fullTime = new Date(e.time * 1000).toLocaleString();
+
+            return `
+                <div class="flex items-center gap-3 px-5 py-2.5 hover:bg-white/[0.02] transition-colors duration-100">
+                    <span class="w-1.5 h-1.5 rounded-full ${color} bg-current shrink-0"></span>
+                    <span class="text-xs font-medium ${color}">${dashEscapeHtml(label)}</span>
+                    <span class="text-xs text-gray-500 truncate flex-1 min-w-0">${detail}</span>
+                    <span class="text-xs text-gray-600 shrink-0" title="${fullTime}">${dashTimeAgo(e.time)}</span>
+                </div>`;
+        }).join('');
+    } catch (e) {
+        console.warn('[dashboard] activity load failed:', e);
+        container.innerHTML = '<div class="px-5 py-6 text-center text-sm text-gray-500">Failed to load activity.</div>';
     }
-
-    container.innerHTML = entries.map(e => {
-        const label = dashActivityLabels[e.action] || e.action;
-        const color = dashActivityColors[e.action] || 'text-gray-400';
-        const detail = e.detail ? dashEscapeHtml(e.detail) : '';
-        const fullTime = new Date(e.time * 1000).toLocaleString();
-
-        return `
-            <div class="flex items-center gap-3 px-5 py-2.5 hover:bg-white/[0.02] transition-colors duration-100">
-                <span class="w-1.5 h-1.5 rounded-full ${color} bg-current shrink-0"></span>
-                <span class="text-xs font-medium ${color}">${dashEscapeHtml(label)}</span>
-                <span class="text-xs text-gray-500 truncate flex-1 min-w-0">${detail}</span>
-                <span class="text-xs text-gray-600 shrink-0" title="${fullTime}">${dashTimeAgo(e.time)}</span>
-            </div>`;
-    }).join('');
 }
 
 // ── Start polling ──

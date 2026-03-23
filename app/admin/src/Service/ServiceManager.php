@@ -51,6 +51,12 @@ class ServiceManager {
     }
 
     private function isRunning(string $name): bool {
+        // Use pgrep -f for php-fpm because the actual binary is versioned
+        // (e.g. "php-fpm8.1", "php-fpm8.2") and pgrep -x requires exact match.
+        if ($name === 'php-fpm') {
+            exec("pgrep -f 'php-fpm: master'", $out, $code);
+            return $code === 0;
+        }
         exec("pgrep -x " . escapeshellarg($name), $out, $code);
         return $code === 0;
     }
