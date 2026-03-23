@@ -1,0 +1,45 @@
+server {
+    listen {{ADMIN_PORT}} default_server;
+    server_name _;
+
+    root /app/admin/public;
+    index index.php;
+
+    # Front controller — all routes go through index.php
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # PHP processing
+    location ~ \.php$ {
+        fastcgi_pass unix:/data/tmp/php-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include /etc/nginx/fastcgi_params;
+        fastcgi_index index.php;
+    }
+
+    # SSE endpoint — disable buffering for real-time streaming
+    location /api/console/stream {
+        fastcgi_pass unix:/data/tmp/php-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME /app/admin/public/index.php;
+        include /etc/nginx/fastcgi_params;
+        fastcgi_buffering off;
+        fastcgi_keep_conn on;
+        proxy_read_timeout 3600s;
+        fastcgi_read_timeout 3600s;
+    }
+
+    # Static assets
+    location /assets/ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Block access to PHP source
+    location /src/ {
+        deny all;
+    }
+
+    access_log /data/logs/admin-access.log;
+    error_log /data/logs/admin-error.log;
+}

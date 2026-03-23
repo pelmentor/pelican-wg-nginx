@@ -1,0 +1,38 @@
+server {
+    listen {{USER_PORT}};
+    server_name _;
+
+    root /data/webroot;
+    index index.html index.php;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ \.php$ {
+        fastcgi_pass unix:/data/tmp/php-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include /etc/nginx/fastcgi_params;
+        fastcgi_index index.php;
+    }
+
+    # Health check
+    location ~ ^/(fpm-status|fpm-ping)$ {
+        access_log off;
+        allow 127.0.0.1;
+        deny all;
+        fastcgi_pass unix:/data/tmp/php-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include /etc/nginx/fastcgi_params;
+    }
+
+    location ~ /\. { deny all; }
+
+    location ~* \.(png|jpg|jpeg|gif|webp|ico|css|js|json|svg)$ {
+        expires 1h;
+        add_header Cache-Control "public, immutable";
+    }
+
+    access_log /data/logs/nginx-access.log;
+    error_log /data/logs/nginx-error.log warn;
+}

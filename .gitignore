@@ -2,7 +2,12 @@
 *.tmp
 .env
 
-# WireGuard configs contain private keys — NEVER commit
-*.conf
-!docker/nginx.conf
-!docker/php-fpm.conf
+# WireGuard configs contain private keys
+/data/
+
+# Reference code (development only, not shipped)
+/reference/
+
+# Old Pelican egg files (removed)
+/docker/
+egg-wg-nginx.json

@@ -1,0 +1,36 @@
+/* Console terminal styling — ref: Pelican Panel console.css */
+#terminal {
+    border-radius: 10px 10px 0 0;
+    overflow: hidden;
+}
+
+.xterm .xterm-rows > div {
+    padding-left: 10px;
+    padding-top: 2px;
+    padding-right: 10px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    background: none;
+    width: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* Editor textarea */
+#editor-content, #config-editor {
+    tab-size: 4;
+}
+
+/* Transitions */
+.transition {
+    transition: all 150ms ease;
+}

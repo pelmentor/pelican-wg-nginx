@@ -1,0 +1,81 @@
+<?php
+
+class ConsoleController {
+    public function index(): void {
+        $page = 'console';
+        require __DIR__ . '/../View/layout.php';
+    }
+
+    public function stream(): void {
+        $streamer = new LogStreamer();
+        $streamer->stream([
+            DATA_DIR . '/logs/nginx-error.log',
+            DATA_DIR . '/logs/php-fpm-error.log',
+            DATA_DIR . '/logs/nginx-access.log',
+            DATA_DIR . '/logs/wireguard.log',
+            DATA_DIR . '/logs/admin-error.log',
+        ]);
+    }
+
+    public function command(): void {
+        header('Content-Type: application/json');
+        $input = json_decode(file_get_contents('php://input'), true);
+        $cmd = trim($input['command'] ?? '');
+
+        if ($cmd === '' || $cmd === 'help') {
+            echo json_encode(['output' => $this->help()]);
+            return;
+        }
+
+        // Ping — validate host to prevent injection
+        if (preg_match('/^ping\s+([\w.\-:]+)$/', $cmd, $m)) {
+            $output = shell_exec('ping -c 4 -W 3 ' . escapeshellarg($m[1]) . ' 2>&1');
+            echo json_encode(['output' => $output]);
+            return;
+        }
+
+        $result = match ($cmd) {
+            'status' => $this->statusOutput(),
+            'wg show' => shell_exec('wg show 2>&1') ?: 'WireGuard not active',
+            'wg peers' => shell_exec('wg show wg0 peers 2>&1; wg show wg0 endpoints 2>&1; wg show wg0 latest-handshakes 2>&1; wg show wg0 transfer 2>&1') ?: 'No peers',
+            'nginx reload' => shell_exec('nginx -t 2>&1 && nginx -s reload 2>&1') ?: 'Reloaded',
+            'nginx test' => shell_exec('nginx -c /data/nginx/nginx.conf -t 2>&1') ?: 'OK',
+            'logs access' => shell_exec('tail -n 30 /data/logs/nginx-access.log 2>&1') ?: 'No log yet',
+            'logs error' => shell_exec('tail -n 30 /data/logs/nginx-error.log 2>&1') ?: 'No errors',
+            'phpinfo' => shell_exec('php -v 2>&1') . "\n\nExtensions:\n" . shell_exec('php -m 2>&1'),
+            default => null,
+        };
+
+        if ($result === null) {
+            echo json_encode(['output' => "Unknown command: $cmd\nType 'help' for available commands."]);
+        } else {
+            echo json_encode(['output' => $result]);
+        }
+    }
+
+    private function statusOutput(): string {
+        $mgr = new ServiceManager();
+        $status = $mgr->getAllStatus();
+        $lines = ["=== Service Status ==="];
+        foreach ($status as $svc => $running) {
+            $lines[] = "  $svc: " . ($running ? 'RUNNING' : 'STOPPED');
+        }
+        return implode("\n", $lines);
+    }
+
+    private function help(): string {
+        return <<<HELP
+Available commands:
+  help              — show this message
+  status            — show all service statuses
+  wg show           — WireGuard interface status
+  wg peers          — peer details (endpoints, handshakes, transfer)
+  ping <host>       — ping a host (e.g. ping 10.0.0.1)
+  nginx reload      — reload Nginx config (tests first)
+  nginx test        — test Nginx config for errors
+  logs access       — last 30 lines of access log
+  logs error        — last 30 lines of error log
+  phpinfo           — PHP version and extensions
+HELP;
+    }
+}
