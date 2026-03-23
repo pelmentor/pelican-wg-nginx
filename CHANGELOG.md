@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.3.0] — 2026-03-23
+
+### Added
+- PresharedKey support via `WG_PRESHARED_KEY` variable for optional symmetric encryption layer on top of WireGuard's standard key exchange
+- Version display at startup: prints Ubuntu, Nginx, PHP, WireGuard versions and loaded PHP extensions
+- Error log tailing to Pelican console — `nginx-error.log` and `php-fpm-error.log` are streamed in real time via `tail -F`
+- WireGuard output logging to `logs/wireguard.log` (also printed to console at startup)
+- Log rotation at startup: log files exceeding 10 MB are truncated to the last 1000 lines
+- Comprehensive code comments throughout the entrypoint covering trap handlers, cleanup flow, `wait -n` behavior, and signal propagation
+
+### Changed
+- Egg description now shows PHP 8.1, Ubuntu 22.04, and lists available PHP extensions
+
+### Removed
+- All Minecraft, BlueMap, and Dynmap references from public-facing files
+
 ## [1.2.0] — 2026-03-23
 
 ### Changed

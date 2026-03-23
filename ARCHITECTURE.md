@@ -108,7 +108,14 @@ The base image is **Ubuntu 22.04 LTS** with packages installed via apt.
 │   └── nginx.conf             <- Nginx config (editable through the Panel)
 ├── php/
 │   └── php-fpm.conf           <- PHP-FPM config
+├── logs/                      <- all service logs
+│   ├── nginx-access.log       <- Nginx access log (file only)
+│   ├── nginx-error.log        <- Nginx error log (file + console)
+│   ├── php-fpm-error.log      <- PHP-FPM error log (file + console)
+│   └── wireguard.log          <- WireGuard startup output
 └── tmp/                       <- writable temp directory for all services
+    ├── php-fpm.sock           <- PHP-FPM unix socket
+    ├── nginx.pid              <- Nginx PID file
     └── nginx/                 <- Nginx temp files (client body, proxy, etc.)
 ```
 
@@ -124,9 +131,13 @@ The base image is **Ubuntu 22.04 LTS** with packages installed via apt.
 ### Startup Order
 
 1. `tini` starts the entrypoint script as PID 1 (reaps zombies, forwards signals)
-2. Entrypoint runs `wg-quick up wg0` (oneshot — configures the interface and exits)
-3. Entrypoint starts `php-fpm` in the background
-4. Entrypoint starts `nginx` in the foreground (or both backgrounded with `wait -n`)
+2. Log rotation runs: any log file exceeding 10 MB is truncated to the last 1000 lines
+3. Version info is printed (Ubuntu, Nginx, PHP, WireGuard versions and PHP extensions)
+4. Entrypoint runs `wg-quick up wg0` (oneshot — configures the interface and exits); output is logged to `logs/wireguard.log` and printed to the console
+5. Entrypoint starts `php-fpm` in the background
+6. Entrypoint starts `nginx` in the background
+7. `tail -F` begins tailing `nginx-error.log` and `php-fpm-error.log` to the console
+8. `wait -n` blocks until any backgrounded process exits
 
 ### Crash Behavior
 
@@ -155,6 +166,34 @@ cleanly tear down the WireGuard interface, then exits.
 This matches the behavior of the official Nginx and PHP-FPM Docker images, which
 both use `STOPSIGNAL SIGQUIT`.
 
+## Logging Strategy
+
+### Console Output (Pelican Console)
+
+Error logs from Nginx and PHP-FPM are tailed to the Pelican console in real time
+using `tail -F`. This allows operators to see errors directly in the Panel without
+needing to open the File Manager or SSH into the container.
+
+- **nginx-error.log** — tailed to console
+- **php-fpm-error.log** — tailed to console
+- **nginx-access.log** — file only (too noisy for the console; every HTTP request generates a line)
+- **wireguard.log** — WireGuard startup output is both logged to `logs/wireguard.log` and printed to the console at startup via `tee`
+
+### Log Rotation
+
+A simple rotation strategy runs at container startup:
+
+- Each log file is checked; if it exceeds **10 MB**, it is truncated to the **last 1000 lines**
+- This prevents unbounded log growth across restarts while keeping recent context
+- No `logrotate` daemon is installed — the image stays minimal, and startup-time truncation is sufficient for a container that restarts regularly
+
+### Why Not logrotate
+
+Installing logrotate would add cron and its dependencies to the image. Since
+Pelican containers restart on crashes and redeploys, logs never grow unbounded
+within a single run. Checking file sizes once at startup is simple, reliable,
+and adds zero runtime overhead.
+
 ## Architectural Decisions and Prior Art
 
 Detailed analysis of existing solutions is in [RESEARCH.md](RESEARCH.md).
@@ -176,6 +215,14 @@ WireGuard runs in the kernel — `wg-quick up` configures the interface and exit
 There is no daemon process to monitor. We do the same: WG is brought up in the
 entrypoint before starting nginx/php-fpm, and torn down separately during cleanup.
 
+### WireGuard: PresharedKey Support
+
+The egg supports an optional `WG_PRESHARED_KEY` variable. When set, it is written
+into the `[Peer]` section of `wg0.conf` as `PresharedKey = ...`. This adds a
+layer of symmetric encryption on top of WireGuard's standard Curve25519 key
+exchange, providing post-quantum resistance. When left empty, the line is omitted
+and WireGuard operates with its default asymmetric-only handshake.
+
 ### PHP-FPM: Unix Socket (not TCP)
 
 | Option | Used by | Rationale |
@@ -190,7 +237,7 @@ entrypoint before starting nginx/php-fpm, and torn down separately during cleanu
 |--------|---------|-----------|
 | symlink -> /dev/stdout | official nginx | Logs appear in `docker logs` |
 | Real files + logrotate | linuxserver | Persistent volume, logs survive restarts |
-| **Real files** | **this project** | Visible in Pelican File Manager; users can download them |
+| **Real files + tail** | **this project** | Visible in Pelican File Manager; error logs also tailed to console for real-time visibility |
 
 ### Nginx Temp Directories: /home/container/tmp/
 

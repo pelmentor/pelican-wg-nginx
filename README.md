@@ -2,6 +2,17 @@
 
 Custom egg for [Pelican Panel](https://pelican.dev) (Pterodactyl fork). Runs a container with a WireGuard VPN client and an Nginx + PHP-FPM web server. Data can be delivered to the web server over a WG tunnel from a remote host.
 
+## Features
+
+- **Nginx + PHP 8.1 FPM** with curl, gd, mbstring, and zip extensions
+- **WireGuard VPN client** (optional — leave WG keys empty to run as a plain web server)
+- **PresharedKey support** for additional WireGuard encryption
+- **Version info at startup** — displays Ubuntu, Nginx, PHP, WireGuard versions and loaded PHP extensions
+- **Error logs streamed to Pelican console** in real time (nginx errors, PHP-FPM errors)
+- **Log rotation at startup** — log files exceeding 10 MB are truncated to the last 1000 lines
+- **Configs editable via Pelican File Manager** — nginx.conf and php-fpm.conf are auto-restored if deleted
+- **Default fallback port: 7890** — used when no port allocation is provided
+
 ## Quick Start
 
 ### 1. Configure Wings
@@ -58,8 +69,11 @@ When creating a server in Pelican, fill in:
 | `WG_PEER_ENDPOINT` | Peer address and port | `vds.example.com:51820` |
 | `WG_PEER_ALLOWED_IPS` | IPs allowed through the tunnel | `10.0.0.1/32` |
 | `WG_LISTEN_PORT` | WireGuard UDP port | `51820` |
+| `WG_PRESHARED_KEY` | (Optional) PresharedKey for extra encryption | `pPqQrR...=` |
 
 All WG variables are optional — leave them empty to run as a plain web server without VPN.
+
+If no port allocation is provided by the panel, the server defaults to port **7890**.
 
 ### 5. Upload Website Files
 
@@ -75,6 +89,19 @@ Or set up automatic delivery from the remote host over the WG tunnel:
 
 If the server is behind OPNsense, port forwarding is required.
 See [OPNSENSE.md](OPNSENSE.md) for details.
+
+## Log Files
+
+The container writes logs to the `logs/` directory:
+
+| File | Content | Streamed to console |
+|------|---------|---------------------|
+| `logs/nginx-access.log` | HTTP request log | No (file only) |
+| `logs/nginx-error.log` | Nginx errors | Yes |
+| `logs/php-fpm-error.log` | PHP errors | Yes |
+| `logs/wireguard.log` | WireGuard startup output | No |
+
+**Auto-rotation:** At startup, any log file exceeding 10 MB is truncated to the last 1000 lines.
 
 ## Project Structure
 
