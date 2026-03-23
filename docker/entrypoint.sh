@@ -1,0 +1,238 @@
+#!/bin/bash
+# =============================================================================
+# Entrypoint для контейнера WireGuard + Nginx + PHP-FPM
+# =============================================================================
+# Запускается от root (нужно для WireGuard).
+# Nginx worker'ы работают от user container (директива в nginx.conf).
+# PHP-FPM worker'ы работают от user container (директива в php-fpm.conf).
+#
+# Порядок запуска:
+# 1. Zombie cleanup (ref: linuxserver/nginx)
+# 2. sysctl для WG client mode (ref: linuxserver/wireguard)
+# 3. Генерация wg0.conf из переменных окружения Pelican
+# 4. Поднятие WireGuard интерфейса
+# 5. Подстановка порта/сокета в конфиги
+# 6. Запуск PHP-FPM (фоном)
+# 7. Запуск Nginx (фоном)
+# 8. wait -n — если любой процесс упал, контейнер завершается
+#
+# Graceful shutdown:
+# - Tini (PID 1) ловит SIGTERM/SIGINT от Pelican (egg stop: "^^C")
+# - Trap отправляет SIGQUIT (graceful) nginx и php-fpm
+# - WG-интерфейс убирается через wg-quick down
+# =============================================================================
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Логирование
+# ---------------------------------------------------------------------------
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+log_step()  { echo -e "${CYAN}[STEP]${NC} $*"; }
+
+# ---------------------------------------------------------------------------
+# Graceful shutdown
+# Ref: official nginx/php-fpm — SIGQUIT = graceful (дожидается in-flight)
+# Ref: linuxserver/wireguard — wg-quick down в обратном порядке
+# ---------------------------------------------------------------------------
+cleanup() {
+    log_info "Shutting down..."
+    kill -SIGQUIT "$NGINX_PID" 2>/dev/null || true
+    kill -SIGQUIT "$PHP_FPM_PID" 2>/dev/null || true
+    wait "$NGINX_PID" 2>/dev/null || true
+    wait "$PHP_FPM_PID" 2>/dev/null || true
+    wg-quick down wg0 2>/dev/null || true
+    log_info "Shutdown complete."
+    exit 0
+}
+trap cleanup SIGTERM SIGINT
+
+# ===========================================================================
+# STEP 0: Проверки и подготовка
+# ===========================================================================
+log_step "Preparing environment..."
+
+# Ref: linuxserver/nginx — zombie cleanup перед стартом.
+# Если контейнер был некорректно перезапущен, могут остаться stale процессы.
+for proc in nginx php-fpm; do
+    if pgrep -x "$proc" >/dev/null 2>&1; then
+        log_warn "Stale $proc processes found, killing..."
+        pkill -x "$proc" 2>/dev/null || true
+        sleep 1
+    fi
+done
+
+# Убедимся что все нужные директории существуют и права корректны.
+# Installation script создаёт их в /mnt/server, но при первом запуске
+# Docker image может стартануть без install phase (если образ уже содержит всё).
+mkdir -p /home/container/{webroot,wg,nginx,php,logs,tmp}
+mkdir -p /run/php /run/nginx /tmp/nginx
+chown -R container:container /home/container /run/php /run/nginx /tmp/nginx
+
+# Дефолтная страница если webroot пуст
+if [ ! -f /home/container/webroot/index.html ] && [ -z "$(ls -A /home/container/webroot/ 2>/dev/null)" ]; then
+    cat > /home/container/webroot/index.html <<'DEFAULTPAGE'
+<!DOCTYPE html>
+<html>
+<head><title>Map Server</title></head>
+<body>
+<h1>Map server is running!</h1>
+<p>Upload your map files to the <code>webroot/</code> directory via Pelican File Manager.</p>
+</body>
+</html>
+DEFAULTPAGE
+    chown container:container /home/container/webroot/index.html
+fi
+
+# ===========================================================================
+# STEP 1: WireGuard
+# ===========================================================================
+log_step "Configuring WireGuard..."
+
+# Ref: linuxserver/wireguard — sysctl для WG client mode.
+# Без этого reverse path filtering может дропать ответные пакеты.
+sysctl -w net.ipv4.conf.all.src_valid_mark=1 2>/dev/null || \
+    log_warn "Cannot set sysctl src_valid_mark (not critical if WG is server-mode)"
+
+WG_ENABLED=false
+
+if [ -z "${WG_PRIVATE_KEY:-}" ]; then
+    log_warn "WG_PRIVATE_KEY not set — WireGuard disabled"
+    log_warn "Set WireGuard variables in Pelican Panel to enable VPN"
+else
+    WG_CONF="/etc/wireguard/wg0.conf"
+    mkdir -p /etc/wireguard
+
+    # ListenPort — опционален. Без него WG работает как чистый клиент
+    # (инициирует подключение, но не принимает входящие).
+    WG_LISTEN_PORT_LINE=""
+    if [ -n "${WG_LISTEN_PORT:-}" ]; then
+        WG_LISTEN_PORT_LINE="ListenPort = ${WG_LISTEN_PORT}"
+    fi
+
+    # Endpoint — опционален. Если пир подключается к нам — endpoint не нужен.
+    WG_ENDPOINT_LINE=""
+    if [ -n "${WG_PEER_ENDPOINT:-}" ]; then
+        WG_ENDPOINT_LINE="Endpoint = ${WG_PEER_ENDPOINT}"
+    fi
+
+    cat > "$WG_CONF" <<EOF
+# Auto-generated by entrypoint.sh from Pelican env vars
+# Changes will be overwritten on container restart
+
+[Interface]
+PrivateKey = ${WG_PRIVATE_KEY}
+Address = ${WG_ADDRESS:-10.0.0.2/24}
+${WG_LISTEN_PORT_LINE}
+
+[Peer]
+PublicKey = ${WG_PEER_PUBLIC_KEY:-}
+${WG_ENDPOINT_LINE}
+AllowedIPs = ${WG_PEER_ALLOWED_IPS:-10.0.0.0/24}
+PersistentKeepalive = 25
+EOF
+    chmod 600 "$WG_CONF"
+
+    log_info "Starting WireGuard..."
+    if wg-quick up wg0 2>&1; then
+        WG_ENABLED=true
+        log_info "WireGuard is up:"
+        wg show wg0 | sed 's/^/  /'
+    else
+        log_error "WireGuard failed to start! Check your keys and endpoint."
+        log_error "Container will continue without VPN."
+    fi
+fi
+
+# ===========================================================================
+# STEP 2: Конфиги Nginx и PHP-FPM
+# ===========================================================================
+log_step "Configuring Nginx and PHP-FPM..."
+
+SERVER_PORT="${SERVER_PORT:-8080}"
+
+# Определяем версию PHP автоматически (8.1 на Ubuntu 22.04)
+PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+PHP_FPM_BIN="/usr/sbin/php-fpm${PHP_VERSION}"
+PHP_FPM_SOCK="/run/php/php-fpm.sock"
+
+# Копируем дефолтные конфиги если пользователь их удалил через File Manager
+if [ ! -f /home/container/nginx/nginx.conf ]; then
+    log_warn "nginx.conf missing — restoring default"
+    cp /defaults/nginx.conf /home/container/nginx/nginx.conf
+    chown container:container /home/container/nginx/nginx.conf
+fi
+if [ ! -f /home/container/php/php-fpm.conf ]; then
+    log_warn "php-fpm.conf missing — restoring default"
+    cp /defaults/php-fpm.conf /home/container/php/php-fpm.conf
+    chown container:container /home/container/php/php-fpm.conf
+fi
+
+# Подстановка плейсхолдеров. sed заменяет ТОЛЬКО {{...}} маркеры.
+# Если пользователь вручную поменял порт в конфиге — sed не тронет его
+# (плейсхолдер уже заменён на число с прошлого запуска).
+sed -i "s/{{SERVER_PORT}}/${SERVER_PORT}/g" /home/container/nginx/nginx.conf
+sed -i "s|{{PHP_FPM_SOCK}}|${PHP_FPM_SOCK}|g" /home/container/nginx/nginx.conf
+sed -i "s|{{PHP_FPM_SOCK}}|${PHP_FPM_SOCK}|g" /home/container/php/php-fpm.conf
+
+# ===========================================================================
+# STEP 3: Запуск PHP-FPM
+# ===========================================================================
+log_step "Starting PHP-FPM ${PHP_VERSION}..."
+
+"$PHP_FPM_BIN" \
+    --fpm-config /home/container/php/php-fpm.conf \
+    --nodaemonize &
+PHP_FPM_PID=$!
+
+# Ждём создания сокета (php-fpm нужно ~1с)
+for i in $(seq 1 10); do
+    [ -S "$PHP_FPM_SOCK" ] && break
+    sleep 0.5
+done
+
+if [ -S "$PHP_FPM_SOCK" ]; then
+    log_info "PHP-FPM started (PID: $PHP_FPM_PID, socket: $PHP_FPM_SOCK)"
+else
+    log_error "PHP-FPM socket not created after 5s! Check php-fpm.conf"
+fi
+
+# ===========================================================================
+# STEP 4: Запуск Nginx
+# ===========================================================================
+log_step "Starting Nginx on port ${SERVER_PORT}..."
+
+nginx -c /home/container/nginx/nginx.conf &
+NGINX_PID=$!
+log_info "Nginx started (PID: $NGINX_PID)"
+
+# ===========================================================================
+# Ready!
+# Эта строка ОБЯЗАТЕЛЬНА — Pelican ищет её в stdout чтобы пометить
+# сервер как "Running" (см. egg config.startup.done).
+# ===========================================================================
+echo ""
+log_info "============================================"
+log_info "  All services started successfully!"
+log_info "  Web server: http://0.0.0.0:${SERVER_PORT}"
+if [ "$WG_ENABLED" = true ]; then
+    log_info "  WireGuard:  ${WG_ADDRESS:-10.0.0.2/24}"
+fi
+log_info "============================================"
+echo ""
+
+# ===========================================================================
+# Ожидание. Если ЛЮБОЙ процесс упадёт — выходим.
+# Pelican увидит завершение контейнера и может перезапустить его.
+# ===========================================================================
+wait -n "$PHP_FPM_PID" "$NGINX_PID" 2>/dev/null || true
+log_error "A service has exited unexpectedly!"
+cleanup

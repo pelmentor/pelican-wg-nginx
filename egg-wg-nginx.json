@@ -1,0 +1,99 @@
+{
+    "_comment": "Pelican Egg: WireGuard + Nginx + PHP-FPM. Веб-сервер с VPN-туннелем для хостинга карт Minecraft.",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-03-23T12:00:00+00:00",
+    "name": "WireGuard + Nginx + PHP-FPM",
+    "author": "pelmentor@github.com",
+    "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "description": "Веб-сервер Nginx + PHP-FPM с WireGuard VPN-клиентом. Для хостинга интерактивных карт Minecraft (BlueMap, Dynmap, Squaremap) с доставкой данных по WG-туннелю.",
+    "features": null,
+    "docker_images": {
+        "WG + Nginx + PHP-FPM": "ghcr.io/pelmentor/pelican-wg-nginx:latest"
+    },
+    "file_denylist": [],
+    "startup": "/entrypoint.sh",
+    "config": {
+        "files": "{}",
+        "startup": "{\r\n    \"done\": \"All services started successfully!\"\r\n}",
+        "logs": "{}",
+        "stop": "^^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n# =============================================================================\n# Installation script — запускается при создании/переустановке сервера.\n# Контейнер: ubuntu:22.04 (отдельный от runtime!).\n# Пишет в /mnt/server/ → маунтится как /home/container/ при runtime.\n#\n# Ref: pelican-eggs — стандартный паттерн:\n#   apt install deps → mkdir → download/copy defaults\n# =============================================================================\n\nset -e\n\necho \"============================================\"\necho \"  WG + Nginx + PHP-FPM — Installation\"\necho \"============================================\"\n\napt-get update\napt-get install -y --no-install-recommends curl ca-certificates\n\n# Структура директорий\nmkdir -p /mnt/server/webroot\nmkdir -p /mnt/server/wg\nmkdir -p /mnt/server/nginx\nmkdir -p /mnt/server/php\nmkdir -p /mnt/server/logs\nmkdir -p /mnt/server/tmp\n\n# Дефолтная страница (не перезаписываем если уже есть — пользователь мог залить свои файлы)\nif [ ! -f /mnt/server/webroot/index.html ]; then\n    cat > /mnt/server/webroot/index.html <<'HTMLEOF'\n<!DOCTYPE html>\n<html>\n<head><title>Map Server</title><style>body{font-family:sans-serif;max-width:600px;margin:50px auto;text-align:center}</style></head>\n<body>\n<h1>Map server is running!</h1>\n<p>Upload your map files to the <code>webroot/</code> directory.</p>\n<p><small>Powered by WG + Nginx + PHP-FPM egg for Pelican Panel</small></p>\n</body>\n</html>\nHTMLEOF\nfi\n\necho \"\"\necho \"Installation complete!\"\necho \"Start the server, then upload map files to webroot/\"\necho \"============================================\"",
+            "container": "ubuntu:22.04",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "WireGuard Private Key",
+            "description": "Приватный ключ WireGuard для этого контейнера. Генерация: wg genkey. Оставьте пустым чтобы отключить WG.",
+            "env_variable": "WG_PRIVATE_KEY",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "sort": 1,
+            "field_type": "text"
+        },
+        {
+            "name": "WireGuard Address",
+            "description": "IP-адрес контейнера в WG-сети (CIDR). Согласуйте с настройками MC-сервера.",
+            "env_variable": "WG_ADDRESS",
+            "default_value": "10.0.0.2/24",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string",
+            "sort": 2,
+            "field_type": "text"
+        },
+        {
+            "name": "WireGuard Listen Port",
+            "description": "UDP-порт WireGuard. Укажите если контейнер принимает входящие WG-подключения. Добавьте как UDP-аллокацию в Pelican.",
+            "env_variable": "WG_LISTEN_PORT",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|integer|between:1024,65535",
+            "sort": 3,
+            "field_type": "text"
+        },
+        {
+            "name": "Peer Public Key",
+            "description": "Публичный ключ WG-пира (MC-сервера). Получите от администратора сервера.",
+            "env_variable": "WG_PEER_PUBLIC_KEY",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "sort": 4,
+            "field_type": "text"
+        },
+        {
+            "name": "Peer Endpoint",
+            "description": "Адрес WG-пира — host:port. Оставьте пустым если пир подключается к нам.",
+            "env_variable": "WG_PEER_ENDPOINT",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "sort": 5,
+            "field_type": "text"
+        },
+        {
+            "name": "Peer Allowed IPs",
+            "description": "IP через WG-туннель. Обычно IP MC-сервера в WG-сети.",
+            "env_variable": "WG_PEER_ALLOWED_IPS",
+            "default_value": "10.0.0.1/32",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string",
+            "sort": 6,
+            "field_type": "text"
+        }
+    ]
+}
