@@ -172,7 +172,9 @@ class UserManager {
             return [];
         }
         $data = json_decode($json, true);
-        return is_array($data) ? $data : [];
+        if (!is_array($data)) return [];
+        // Support both formats: {"users":[...]} and flat [...]
+        return isset($data['users']) && is_array($data['users']) ? $data['users'] : $data;
     }
 
     /**
@@ -201,7 +203,8 @@ class UserManager {
         if ($json !== false && $json !== '') {
             $data = json_decode($json, true);
             if (is_array($data)) {
-                $users = $data;
+                // Support both {"users":[...]} and flat [...]
+                $users = isset($data['users']) && is_array($data['users']) ? $data['users'] : $data;
             }
         }
 
@@ -211,7 +214,7 @@ class UserManager {
         // Write back
         ftruncate($fh, 0);
         rewind($fh);
-        fwrite($fh, json_encode($users, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        fwrite($fh, json_encode(['users' => array_values($users)], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         fflush($fh);
 
         flock($fh, LOCK_UN);
