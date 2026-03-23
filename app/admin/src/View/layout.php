@@ -1,3 +1,4 @@
+<?php $currentUser = Auth::getCurrentUser(); ?>
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
@@ -113,10 +114,29 @@
                 </svg>
                 Activity
             </a>
+            <?php if ($currentUser && $currentUser['role'] === 'admin'): ?>
+            <a href="/users"
+               class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150
+                      <?= $page === 'users' ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-gray-400 hover:text-white hover:bg-white/5' ?>">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>
+                </svg>
+                Users
+            </a>
+            <?php endif; ?>
         </nav>
 
         <!-- Sidebar footer -->
         <div class="px-3 py-4 border-t border-panel-border shrink-0">
+            <?php if ($currentUser): ?>
+            <div class="flex items-center gap-3 px-3 py-2 mb-1">
+                <div class="w-7 h-7 rounded-full bg-primary-600/20 flex items-center justify-center text-xs font-medium text-primary-400 uppercase"><?= htmlspecialchars(substr($currentUser['username'], 0, 1)) ?></div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium text-white truncate"><?= htmlspecialchars($currentUser['username']) ?></div>
+                    <div class="text-xs text-gray-500 capitalize"><?= htmlspecialchars($currentUser['role']) ?></div>
+                </div>
+            </div>
+            <?php endif; ?>
             <a href="/logout" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:text-red-400 hover:bg-white/5 transition-colors duration-150">
                 <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/>
@@ -202,6 +222,8 @@
     <script src="/assets/js/settings.js"></script>
     <?php elseif ($page === 'activity'): ?>
     <script src="/assets/js/activity.js"></script>
+    <?php elseif ($page === 'users'): ?>
+    <script src="/assets/js/users.js"></script>
     <?php endif; ?>
 </body>
 </html>

@@ -2,14 +2,15 @@
 
 class ConsoleController {
     private const LOG_FILES = [
-        'nginx-error' => '/data/logs/nginx-error.log',
-        'php-fpm-error' => '/data/logs/php-fpm-error.log',
-        'nginx-access' => '/data/logs/nginx-access.log',
-        'wireguard' => '/data/logs/wireguard.log',
-        'admin-error' => '/data/logs/admin-error.log',
+        'nginx-error'   => USER_LOGS_DIR . '/nginx-error.log',
+        'php-fpm-error' => USER_LOGS_DIR . '/php-fpm-error.log',
+        'nginx-access'  => USER_LOGS_DIR . '/nginx-access.log',
+        'wireguard'     => USER_LOGS_DIR . '/wireguard.log',
+        'admin-error'   => ADMIN_LOGS_DIR . '/admin-error.log',
     ];
 
     public function index(): void {
+        Permission::requirePerm(Auth::getCurrentRole(), 'console.read');
         $page = 'console';
         require __DIR__ . '/../View/layout.php';
     }
@@ -23,6 +24,7 @@ class ConsoleController {
      */
     public function poll(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'console.read');
 
         $positions = json_decode($_GET['positions'] ?? '{}', true) ?: [];
 
@@ -38,6 +40,8 @@ class ConsoleController {
      */
     public function command(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'console.write');
+
         $input = json_decode(file_get_contents('php://input'), true);
         $cmd = trim($input['command'] ?? '');
 
@@ -66,8 +70,8 @@ class ConsoleController {
             'wg peers' => shell_exec('wg show wg0 peers 2>&1; wg show wg0 endpoints 2>&1; wg show wg0 latest-handshakes 2>&1; wg show wg0 transfer 2>&1') ?: 'No peers',
             'nginx reload' => shell_exec('nginx -t 2>&1 && nginx -s reload 2>&1') ?: 'Reloaded',
             'nginx test' => shell_exec('nginx -c /data/nginx/nginx.conf -t 2>&1') ?: 'OK',
-            'logs access' => shell_exec('tail -n 30 /data/logs/nginx-access.log 2>&1') ?: 'No log yet',
-            'logs error' => shell_exec('tail -n 30 /data/logs/nginx-error.log 2>&1') ?: 'No errors',
+            'logs access' => shell_exec('tail -n 30 ' . escapeshellarg(USER_LOGS_DIR . '/nginx-access.log') . ' 2>&1') ?: 'No log yet',
+            'logs error' => shell_exec('tail -n 30 ' . escapeshellarg(USER_LOGS_DIR . '/nginx-error.log') . ' 2>&1') ?: 'No errors',
             'phpinfo' => shell_exec('php -v 2>&1') . "\n\nExtensions:\n" . shell_exec('php -m 2>&1'),
             default => null,
         };

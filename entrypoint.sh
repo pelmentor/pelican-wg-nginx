@@ -107,7 +107,32 @@ log_info "PHP extensions: $(php -m 2>/dev/null | grep -E '^(curl|gd|mbstring|zip
 
 # Create persistent directory structure.
 # These dirs live on the host volume — they survive container restarts.
-mkdir -p "${DATA}"/{webroot,wg,nginx,php,logs,tmp/nginx}
+mkdir -p "${DATA}/user"/{webroot,config,logs,tmp/nginx}
+mkdir -p "${DATA}/admin"/{logs,sessions,ratelimit,nginx}
+
+# ---------------------------------------------------------------------------
+# Migration — move files from old flat /data layout to new structure.
+# Only runs if old /data/webroot exists (pre-restructure container).
+# ---------------------------------------------------------------------------
+if [ -d "${DATA}/webroot" ] && [ ! -L "${DATA}/webroot" ]; then
+    log_warn "Migrating old /data layout to new /data/user + /data/admin structure..."
+    # User webroot
+    cp -a "${DATA}/webroot/." "${DATA}/user/webroot/" 2>/dev/null || true
+    # WireGuard config
+    [ -f "${DATA}/wg/wg0.conf" ] && cp -a "${DATA}/wg/wg0.conf" "${DATA}/user/config/wg0.conf" 2>/dev/null || true
+    # Logs
+    for f in nginx-access.log nginx-error.log php-fpm-error.log wireguard.log; do
+        [ -f "${DATA}/logs/$f" ] && mv "${DATA}/logs/$f" "${DATA}/user/logs/$f" 2>/dev/null || true
+    done
+    for f in admin-access.log admin-error.log activity.json; do
+        [ -f "${DATA}/logs/$f" ] && mv "${DATA}/logs/$f" "${DATA}/admin/logs/$f" 2>/dev/null || true
+    done
+    # Admin password
+    [ -f "${DATA}/.admin_password" ] && mv "${DATA}/.admin_password" "${DATA}/admin/.admin_password" 2>/dev/null || true
+    # Clean up old dirs
+    rm -rf "${DATA}/webroot" "${DATA}/wg" "${DATA}/nginx" "${DATA}/php" "${DATA}/logs" "${DATA}/tmp"
+    log_info "Migration complete."
+fi
 
 # Both nginx workers and PHP-FPM run as www-data.
 # /data must be writable by www-data for: logs, uploads, configs, socket, PID.
@@ -115,8 +140,8 @@ mkdir -p "${DATA}"/{webroot,wg,nginx,php,logs,tmp/nginx}
 chown -R www-data:www-data "${DATA}"
 
 # Provide a default index page if webroot is empty (first run)
-if [ ! -f "${DATA}/webroot/index.html" ] && [ -z "$(ls -A "${DATA}/webroot/" 2>/dev/null)" ]; then
-    cp /app/default-index.html "${DATA}/webroot/index.html"
+if [ ! -f "${DATA}/user/webroot/index.html" ] && [ -z "$(ls -A "${DATA}/user/webroot/" 2>/dev/null)" ]; then
+    cp /app/default-index.html "${DATA}/user/webroot/index.html"
 fi
 
 # ---------------------------------------------------------------------------
@@ -127,11 +152,13 @@ fi
 # For runtime log limits, Docker's own log driver handles it
 # (see Wings config: docker.log_config.max-size).
 # ---------------------------------------------------------------------------
-for logfile in "${DATA}/logs/"*.log; do
-    if [ -f "$logfile" ] && [ "$(stat -c%s "$logfile" 2>/dev/null || echo 0)" -gt 10485760 ]; then
-        log_warn "Rotating $logfile (>10MB)"
-        tail -n 1000 "$logfile" > "${logfile}.tmp" && mv "${logfile}.tmp" "$logfile"
-    fi
+for logdir in "${DATA}/user/logs" "${DATA}/admin/logs"; do
+    for logfile in "${logdir}/"*.log; do
+        if [ -f "$logfile" ] && [ "$(stat -c%s "$logfile" 2>/dev/null || echo 0)" -gt 10485760 ]; then
+            log_warn "Rotating $logfile (>10MB)"
+            tail -n 1000 "$logfile" > "${logfile}.tmp" && mv "${logfile}.tmp" "$logfile"
+        fi
+    done
 done
 
 # ===========================================================================
@@ -178,12 +205,17 @@ EOF
 
     log_info "Starting WireGuard..."
     # tee: output goes to both console (docker logs) and persistent log file
-    if wg-quick up wg0 2>&1 | tee -a "${DATA}/logs/wireguard.log"; then
+    # Copy WireGuard config to user config dir for visibility
+    cp "$WG_CONF" "${DATA}/user/config/wg0.conf" 2>/dev/null || true
+    chmod 640 "${DATA}/user/config/wg0.conf" 2>/dev/null || true
+    chown root:www-data "${DATA}/user/config/wg0.conf" 2>/dev/null || true
+
+    if wg-quick up wg0 2>&1 | tee -a "${DATA}/user/logs/wireguard.log"; then
         WG_ENABLED=true
         log_info "WireGuard is up:"
         wg show wg0 | sed 's/^/  /'
     else
-        log_error "WireGuard failed to start! See logs/wireguard.log"
+        log_error "WireGuard failed to start! See user/logs/wireguard.log"
         log_error "Container will continue without VPN."
     fi
 fi
@@ -201,35 +233,44 @@ USER_PORT="${USER_PORT:-7890}"
 ADMIN_PORT="${ADMIN_PORT:-9876}"
 
 sed -e "s/{{USER_PORT}}/${USER_PORT}/g" \
-    /app/nginx/user.conf.template > "${DATA}/nginx/user.conf"
+    /app/nginx/user.conf.template > "${DATA}/user/config/nginx-site.conf"
 
 sed -e "s/{{ADMIN_PORT}}/${ADMIN_PORT}/g" \
-    /app/nginx/admin.conf.template > "${DATA}/nginx/admin.conf"
+    /app/nginx/admin.conf.template > "${DATA}/admin/nginx/admin.conf"
 
 sed -e "s|{{DATA}}|${DATA}|g" \
-    /app/nginx/nginx.conf.template > "${DATA}/nginx/nginx.conf"
+    /app/nginx/nginx.conf.template > "${DATA}/admin/nginx/nginx.conf"
 
 sed -e "s|{{DATA}}|${DATA}|g" \
-    /app/php/php-fpm.conf.template > "${DATA}/php/php-fpm.conf"
+    /app/php/php-fpm.conf.template > "${DATA}/user/config/php-fpm.conf"
 
 # ---------------------------------------------------------------------------
 # Admin password — auto-generated on first run if not provided via env var.
-# Stored in /data/.admin_password (persists across restarts).
+# Stored in /data/admin/.admin_password (persists across restarts).
 # Hidden from file manager (FileManager.php skips .admin_password).
 # Printed in startup output so user can find it in docker logs.
 # ---------------------------------------------------------------------------
 if [ -z "${ADMIN_PASSWORD:-}" ]; then
-    if [ ! -f "${DATA}/.admin_password" ]; then
+    if [ ! -f "${DATA}/admin/.admin_password" ]; then
         ADMIN_PASSWORD=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 16)
-        echo "$ADMIN_PASSWORD" > "${DATA}/.admin_password"
+        echo "$ADMIN_PASSWORD" > "${DATA}/admin/.admin_password"
         # Readable by www-data (PHP-FPM) for auth fallback if env var not available
-        chown www-data:www-data "${DATA}/.admin_password"
-        chmod 640 "${DATA}/.admin_password"
+        chown www-data:www-data "${DATA}/admin/.admin_password"
+        chmod 640 "${DATA}/admin/.admin_password"
     else
-        ADMIN_PASSWORD=$(cat "${DATA}/.admin_password")
+        ADMIN_PASSWORD=$(cat "${DATA}/admin/.admin_password")
     fi
 fi
 export ADMIN_PASSWORD
+
+# ---------------------------------------------------------------------------
+# Default admin user — create users.json with default admin if not exists.
+# ---------------------------------------------------------------------------
+if [ ! -f "${DATA}/admin/users.json" ]; then
+    echo '[{"username":"admin","role":"admin"}]' > "${DATA}/admin/users.json"
+    chown www-data:www-data "${DATA}/admin/users.json"
+    chmod 640 "${DATA}/admin/users.json"
+fi
 
 # ===========================================================================
 # STEP 3: Start PHP-FPM
@@ -240,15 +281,15 @@ PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
 # --nodaemonize: stay in foreground so we can track the PID.
 # & at the end: run in background so this script continues.
 "/usr/sbin/php-fpm${PHP_VERSION}" \
-    --fpm-config "${DATA}/php/php-fpm.conf" \
+    --fpm-config "${DATA}/user/config/php-fpm.conf" \
     --nodaemonize &
 PHP_FPM_PID=$!
 
 # Wait for the unix socket to appear (PHP-FPM needs ~1s to create it).
 # Without the socket, nginx can't proxy PHP requests → 502 Bad Gateway.
-for i in $(seq 1 10); do [ -S "${DATA}/tmp/php-fpm.sock" ] && break; sleep 0.5; done
+for i in $(seq 1 10); do [ -S "${DATA}/user/tmp/php-fpm.sock" ] && break; sleep 0.5; done
 
-if [ -S "${DATA}/tmp/php-fpm.sock" ]; then
+if [ -S "${DATA}/user/tmp/php-fpm.sock" ]; then
     log_info "PHP-FPM started (PID: $PHP_FPM_PID)"
 else
     log_error "PHP-FPM socket not created after 5s! Check php-fpm.conf"
@@ -259,10 +300,10 @@ fi
 # ===========================================================================
 log_step "Starting WebSocket server..."
 
-# The Go binary tails all .log files in /data/logs/ and streams new lines
+# The Go binary tails all .log files in /data/user/logs/ and streams new lines
 # to connected WebSocket clients. Listens on 127.0.0.1:6790 (internal only).
 # Nginx proxies /ws → 127.0.0.1:6790/ws for the admin panel.
-ws-server --port 6790 --logdir "${DATA}/logs" &
+ws-server --port 6790 --logdir "${DATA}/user/logs" &
 WS_PID=$!
 log_info "WebSocket server started (PID: $WS_PID, port: 6790)"
 
@@ -271,11 +312,11 @@ log_info "WebSocket server started (PID: $WS_PID, port: 6790)"
 # ===========================================================================
 log_step "Starting Nginx..."
 
-# Nginx reads the generated config from /data/nginx/nginx.conf which
+# Nginx reads the generated config from /data/admin/nginx/nginx.conf which
 # includes both server blocks (user content + admin panel).
 # "daemon off" is set in the config, so nginx stays in foreground.
 # & runs it in background so this script can continue to the health loop.
-nginx -c "${DATA}/nginx/nginx.conf" &
+nginx -c "${DATA}/admin/nginx/nginx.conf" &
 NGINX_PID=$!
 log_info "Nginx started (PID: $NGINX_PID)"
 
@@ -301,8 +342,8 @@ echo ""
 # Only error logs — access log would flood docker logs.
 # touch ensures files exist before tail starts.
 # ===========================================================================
-touch "${DATA}/logs/nginx-error.log" "${DATA}/logs/php-fpm-error.log" "${DATA}/logs/admin-error.log"
-tail -F "${DATA}/logs/nginx-error.log" "${DATA}/logs/php-fpm-error.log" "${DATA}/logs/admin-error.log" 2>/dev/null &
+touch "${DATA}/user/logs/nginx-error.log" "${DATA}/user/logs/php-fpm-error.log" "${DATA}/admin/logs/admin-error.log"
+tail -F "${DATA}/user/logs/nginx-error.log" "${DATA}/user/logs/php-fpm-error.log" "${DATA}/admin/logs/admin-error.log" 2>/dev/null &
 TAIL_PID=$!
 
 # ===========================================================================

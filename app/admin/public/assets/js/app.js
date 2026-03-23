@@ -90,5 +90,6 @@ function formatUptime(seconds) {
 }
 
 function formatDate(timestamp) {
+    if (!timestamp) return '--';
     return new Date(timestamp * 1000).toLocaleString();
 }

@@ -20,10 +20,14 @@ class Auth {
         }
     }
 
+    /**
+     * Check whether the current session is authenticated.
+     * Enforces inactivity timeout and validates user still exists.
+     */
     public static function check(): bool {
         self::ensureSession();
 
-        if (empty($_SESSION['authenticated'])) {
+        if (empty($_SESSION['user_id'])) {
             return false;
         }
 
@@ -33,11 +37,21 @@ class Auth {
             return false;
         }
 
+        // Verify user still exists
+        $user = UserManager::getById($_SESSION['user_id']);
+        if ($user === null) {
+            self::logout();
+            return false;
+        }
+
         // Update last activity timestamp on every authenticated check
         $_SESSION['last_activity'] = time();
         return true;
     }
 
+    /**
+     * Require authentication — redirect to login or return 401 for API routes.
+     */
     public static function requireAuth(): void {
         if (self::check()) return;
 
@@ -52,7 +66,28 @@ class Auth {
         exit;
     }
 
-    // ── CSRF Protection ──────────────────────────────────────────────
+    /**
+     * Get the currently authenticated user, or null if not logged in.
+     */
+    public static function getCurrentUser(): ?array {
+        self::ensureSession();
+
+        if (empty($_SESSION['user_id'])) {
+            return null;
+        }
+
+        return UserManager::getById($_SESSION['user_id']);
+    }
+
+    /**
+     * Get the role of the currently authenticated user.
+     */
+    public static function getCurrentRole(): string {
+        $user = self::getCurrentUser();
+        return $user['role'] ?? 'viewer';
+    }
+
+    // -- CSRF Protection ---------------------------------------------------
 
     /**
      * Return the current CSRF token, generating one if absent.
@@ -84,15 +119,28 @@ class Auth {
         }
     }
 
-    // ── Authentication ───────────────────────────────────────────────
+    // -- Authentication ----------------------------------------------------
 
-    public static function login(string $password): bool {
-        if (!hash_equals(ADMIN_PASSWORD, $password)) return false;
+    /**
+     * Attempt to log in with username and password.
+     * Looks up user via UserManager and verifies password hash.
+     *
+     * @return bool true on success, false on invalid credentials
+     */
+    public static function login(string $username, string $password): bool {
+        $user = UserManager::getByUsername($username);
+        if ($user === null) {
+            return false;
+        }
+
+        if (!UserManager::verifyPassword($user, $password)) {
+            return false;
+        }
 
         self::ensureSession();
         // Regenerate session ID to prevent fixation attacks
         session_regenerate_id(true);
-        $_SESSION['authenticated'] = true;
+        $_SESSION['user_id'] = $user['id'];
         $_SESSION['login_time'] = time();
         $_SESSION['last_activity'] = time();
         // Generate a fresh CSRF token for the new session
@@ -105,23 +153,29 @@ class Auth {
         session_destroy();
     }
 
+    /**
+     * Handle the login page (GET displays form, POST processes login).
+     */
     public static function handleLogin(): void {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $username = $_POST['username'] ?? '';
             $password = $_POST['password'] ?? '';
-            if (self::login($password)) {
-                ActivityLog::log('auth.login', 'Successful login');
+            if (self::login($username, $password)) {
+                ActivityLog::log('auth.login', 'Successful login for user: ' . $username);
                 header('Location: /');
                 exit;
             }
-            ActivityLog::log('auth.login_failed', 'Failed login attempt');
-            $error = 'Invalid password';
+            ActivityLog::log('auth.login_failed', 'Failed login attempt for user: ' . $username);
+            $error = 'Invalid username or password';
         }
         require __DIR__ . '/View/login.php';
         exit;
     }
 
     public static function handleLogout(): void {
-        ActivityLog::log('auth.logout', 'User logged out');
+        $user = self::getCurrentUser();
+        $username = $user['username'] ?? 'unknown';
+        ActivityLog::log('auth.logout', 'User logged out: ' . $username);
         self::logout();
         header('Location: /login');
         exit;

@@ -17,7 +17,7 @@ server {
 
     # PHP processing
     location ~ \.php$ {
-        fastcgi_pass unix:/data/tmp/php-fpm.sock;
+        fastcgi_pass unix:/data/user/tmp/php-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include /etc/nginx/fastcgi_params;
         fastcgi_index index.php;
@@ -46,6 +46,6 @@ server {
         deny all;
     }
 
-    access_log /data/logs/admin-access.log;
-    error_log /data/logs/admin-error.log;
+    access_log /data/admin/logs/admin-access.log;
+    error_log /data/admin/logs/admin-error.log;
 }

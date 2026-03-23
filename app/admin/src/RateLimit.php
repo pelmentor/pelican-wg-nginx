@@ -2,10 +2,15 @@
 
 /**
  * Simple file-based rate limiter.
- * Stores attempt counts per key in /data/tmp/ as flat files.
+ * Stores attempt counts per key in ADMIN_DIR/ratelimit/ as flat files.
  */
 class RateLimit {
-    private const DIR = '/data/tmp/ratelimit';
+    /**
+     * Get the rate-limit storage directory.
+     */
+    private static function dir(): string {
+        return ADMIN_DIR . '/ratelimit';
+    }
 
     /**
      * Check whether the caller is within the allowed rate.
@@ -16,7 +21,7 @@ class RateLimit {
      * @return bool   true if the request is allowed, false if rate-limited
      */
     public static function check(string $key, int $maxAttempts, int $windowSeconds): bool {
-        $dir = self::DIR;
+        $dir = self::dir();
         if (!is_dir($dir)) {
             @mkdir($dir, 0755, true);
         }
@@ -73,7 +78,7 @@ class RateLimit {
      * Called opportunistically — not on every request.
      */
     public static function cleanup(): void {
-        $dir = self::DIR;
+        $dir = self::dir();
         if (!is_dir($dir)) return;
 
         // Run cleanup roughly 1 in 100 requests

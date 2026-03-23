@@ -3,7 +3,7 @@
 class FileManager {
     private string $root;
 
-    public function __construct(string $root = DATA_DIR) {
+    public function __construct(string $root = USER_DIR) {
         $this->root = realpath($root) ?: $root;
     }
 
@@ -42,7 +42,6 @@ class FileManager {
             if ($name === '.' || $name === '..') continue;
             // Hide sensitive entries from file browser
             if ($name === '.admin_password' && $dir === $this->root) continue;
-            if ($name === 'wg' && $dir === $this->root) continue;
 
             $full = $dir . '/' . $name;
             $entries[] = [

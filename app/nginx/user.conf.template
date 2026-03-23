@@ -2,7 +2,7 @@ server {
     listen {{USER_PORT}};
     server_name _;
 
-    root /data/webroot;
+    root /data/user/webroot;
     index index.html index.php;
 
     location / {
@@ -10,7 +10,7 @@ server {
     }
 
     location ~ \.php$ {
-        fastcgi_pass unix:/data/tmp/php-fpm.sock;
+        fastcgi_pass unix:/data/user/tmp/php-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include /etc/nginx/fastcgi_params;
         fastcgi_index index.php;
@@ -21,7 +21,7 @@ server {
         access_log off;
         allow 127.0.0.1;
         deny all;
-        fastcgi_pass unix:/data/tmp/php-fpm.sock;
+        fastcgi_pass unix:/data/user/tmp/php-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include /etc/nginx/fastcgi_params;
     }
@@ -33,6 +33,6 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    access_log /data/logs/nginx-access.log;
-    error_log /data/logs/nginx-error.log warn;
+    access_log /data/user/logs/nginx-access.log;
+    error_log /data/user/logs/nginx-error.log warn;
 }

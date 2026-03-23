@@ -8,17 +8,20 @@
 require __DIR__ . '/../config.php';
 require __DIR__ . '/../src/Router.php';
 require __DIR__ . '/../src/Auth.php';
+require __DIR__ . '/../src/Permission.php';
 require __DIR__ . '/../src/RateLimit.php';
 require __DIR__ . '/../src/Service/StatsService.php';
 require __DIR__ . '/../src/Service/LogStreamer.php';
 require __DIR__ . '/../src/Service/FileManager.php';
 require __DIR__ . '/../src/Service/ServiceManager.php';
 require __DIR__ . '/../src/Service/ActivityLog.php';
+require __DIR__ . '/../src/Service/UserManager.php';
 require __DIR__ . '/../src/Controller/DashboardController.php';
 require __DIR__ . '/../src/Controller/ConsoleController.php';
 require __DIR__ . '/../src/Controller/FilesController.php';
 require __DIR__ . '/../src/Controller/SettingsController.php';
 require __DIR__ . '/../src/Controller/ActivityController.php';
+require __DIR__ . '/../src/Controller/UserController.php';
 
 // Opportunistic rate-limit file cleanup
 RateLimit::cleanup();
@@ -59,6 +62,7 @@ $router->get('/console', [ConsoleController::class, 'index']);
 $router->get('/files', [FilesController::class, 'index']);
 $router->get('/settings', [SettingsController::class, 'index']);
 $router->get('/activity', [ActivityController::class, 'index']);
+$router->get('/users', [UserController::class, 'index']);
 
 // API — Dashboard
 $router->get('/api/stats', [DashboardController::class, 'stats']);
@@ -92,6 +96,13 @@ $router->get('/api/settings/status', [SettingsController::class, 'serviceStatus'
 
 // API — Activity
 $router->get('/api/activity', [ActivityController::class, 'recent']);
+
+// API — Users
+$router->get('/api/users', [UserController::class, 'list']);
+$router->post('/api/users', [UserController::class, 'create']);
+$router->post('/api/users/update', [UserController::class, 'update']);
+$router->post('/api/users/delete', [UserController::class, 'delete']);
+$router->post('/api/users/password', [UserController::class, 'changePassword']);
 
 // Dispatch
 $router->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

@@ -5,8 +5,8 @@
 user www-data;
 worker_processes auto;
 daemon off;
-pid {{DATA}}/tmp/nginx.pid;
-error_log {{DATA}}/logs/nginx-error.log warn;
+pid {{DATA}}/user/tmp/nginx.pid;
+error_log {{DATA}}/user/logs/nginx-error.log warn;
 
 events {
     worker_connections 1024;
@@ -17,11 +17,11 @@ http {
     default_type application/octet-stream;
 
     # Temp dirs must be writable by www-data
-    client_body_temp_path {{DATA}}/tmp/nginx/client_temp;
-    proxy_temp_path {{DATA}}/tmp/nginx/proxy_temp;
-    fastcgi_temp_path {{DATA}}/tmp/nginx/fastcgi_temp;
-    uwsgi_temp_path {{DATA}}/tmp/nginx/uwsgi_temp;
-    scgi_temp_path {{DATA}}/tmp/nginx/scgi_temp;
+    client_body_temp_path {{DATA}}/user/tmp/nginx/client_temp;
+    proxy_temp_path {{DATA}}/user/tmp/nginx/proxy_temp;
+    fastcgi_temp_path {{DATA}}/user/tmp/nginx/fastcgi_temp;
+    uwsgi_temp_path {{DATA}}/user/tmp/nginx/uwsgi_temp;
+    scgi_temp_path {{DATA}}/user/tmp/nginx/scgi_temp;
 
     server_tokens off;
 
@@ -36,8 +36,8 @@ http {
     client_max_body_size 100m;
 
     # Admin panel
-    include {{DATA}}/nginx/admin.conf;
+    include {{DATA}}/admin/nginx/admin.conf;
 
     # User content
-    include {{DATA}}/nginx/user.conf;
+    include {{DATA}}/user/config/nginx-site.conf;
 }

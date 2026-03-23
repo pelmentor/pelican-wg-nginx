@@ -41,15 +41,29 @@
 
             <form method="POST" action="/login">
                 <input type="hidden" name="_csrf" value="<?= Auth::csrfToken() ?>">
+
+                <label class="block text-sm font-medium text-gray-400 mb-2">Username</label>
+                <input
+                    type="text"
+                    name="username"
+                    autofocus
+                    required
+                    autocomplete="username"
+                    class="w-full px-4 py-2.5 bg-gray-950 border border-gray-800 rounded-lg text-white text-sm placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/40 transition mb-4"
+                    placeholder="Enter username"
+                    value="<?= htmlspecialchars($_POST['username'] ?? '') ?>"
+                >
+
                 <label class="block text-sm font-medium text-gray-400 mb-2">Password</label>
                 <input
                     type="password"
                     name="password"
-                    autofocus
                     required
+                    autocomplete="current-password"
                     class="w-full px-4 py-2.5 bg-gray-950 border border-gray-800 rounded-lg text-white text-sm placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/40 transition"
-                    placeholder="Enter admin password"
+                    placeholder="Enter password"
                 >
+
                 <button
                     type="submit"
                     class="w-full mt-4 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition"
@@ -61,7 +75,7 @@
 
         <!-- Hint -->
         <p class="text-xs text-gray-600 text-center mt-6">
-            Password is shown in container logs at startup
+            Default credentials are shown in container logs at startup
         </p>
     </div>
 </body>

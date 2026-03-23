@@ -124,7 +124,7 @@ func tailFile(path string, hub *Hub) {
 
 func main() {
 	port := flag.Int("port", 6790, "WebSocket server port")
-	logDir := flag.String("logdir", "/data/logs", "Directory containing log files")
+	logDir := flag.String("logdir", "/data/user/logs", "Directory containing log files")
 	flag.Parse()
 
 	hub := NewHub()

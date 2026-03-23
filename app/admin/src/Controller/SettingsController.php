@@ -2,18 +2,21 @@
 
 class SettingsController {
     private const CONFIG_MAP = [
+        'nginx'     => USER_CONFIG_DIR . '/nginx-site.conf',
+        'php'       => USER_CONFIG_DIR . '/php-fpm.conf',
         'wireguard' => '/etc/wireguard/wg0.conf',
-        'nginx' => '/data/nginx/user.conf',
-        'php' => '/data/php/php-fpm.conf',
     ];
 
     public function index(): void {
+        Permission::requirePerm(Auth::getCurrentRole(), 'settings.view');
         $page = 'settings';
         require __DIR__ . '/../View/layout.php';
     }
 
     public function getConfig(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'settings.view');
+
         $file = self::CONFIG_MAP[$_GET['file'] ?? ''] ?? null;
         if (!$file || !file_exists($file)) {
             http_response_code(404);
@@ -25,12 +28,18 @@ class SettingsController {
 
     public function saveConfig(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'settings.write');
+
         $input = json_decode(file_get_contents('php://input'), true);
         $file = self::CONFIG_MAP[$input['file'] ?? ''] ?? null;
         if (!$file) {
             http_response_code(400);
             echo json_encode(['error' => 'Invalid config file']);
             return;
+        }
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
         }
         $tmpFile = $file . '.tmp';
         file_put_contents($tmpFile, $input['content'], LOCK_EX);
@@ -41,6 +50,8 @@ class SettingsController {
 
     public function validateConfig(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'settings.view');
+
         $input = json_decode(file_get_contents('php://input'), true);
         $file = $input['file'] ?? '';
         $content = $input['content'] ?? '';
@@ -109,6 +120,8 @@ class SettingsController {
 
     public function serviceAction(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'settings.write');
+
         $input = json_decode(file_get_contents('php://input'), true);
         $mgr = new ServiceManager();
         $result = $mgr->control($input['service'] ?? '', $input['action'] ?? '');
@@ -118,6 +131,8 @@ class SettingsController {
 
     public function serviceStatus(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'settings.view');
+
         $mgr = new ServiceManager();
         echo json_encode($mgr->getAllStatus());
     }

@@ -4,7 +4,7 @@ class FilesController {
     private FileManager $fm;
 
     public function __construct() {
-        $this->fm = new FileManager(DATA_DIR);
+        $this->fm = new FileManager(USER_DIR);
     }
 
     /**
@@ -29,12 +29,14 @@ class FilesController {
     }
 
     public function index(): void {
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.read');
         $page = 'files';
         require __DIR__ . '/../View/layout.php';
     }
 
     public function listDir(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.read');
         try {
             $path = $_GET['path'] ?? '/';
             echo json_encode(['entries' => $this->fm->listDirectory($path)]);
@@ -46,6 +48,7 @@ class FilesController {
 
     public function read(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.read');
         try {
             $path = $_GET['path'] ?? '';
             echo json_encode(['content' => $this->fm->readFile($path), 'path' => $path]);
@@ -57,6 +60,7 @@ class FilesController {
 
     public function write(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.write');
         try {
             $input = $this->jsonInput(['path', 'content']);
             if ($input === null) return;
@@ -71,6 +75,7 @@ class FilesController {
 
     public function upload(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.write');
         try {
             $targetDir = $_POST['path'] ?? '/webroot';
             $this->fm->upload($targetDir, $_FILES['files']);
@@ -84,6 +89,7 @@ class FilesController {
 
     public function delete(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.delete');
         try {
             $input = $this->jsonInput(['path']);
             if ($input === null) return;
@@ -98,6 +104,7 @@ class FilesController {
 
     public function renamePath(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.write');
         try {
             $input = $this->jsonInput(['from', 'to']);
             if ($input === null) return;
@@ -112,6 +119,7 @@ class FilesController {
 
     public function mkdirPath(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.write');
         try {
             $input = $this->jsonInput(['path']);
             if ($input === null) return;
@@ -124,6 +132,7 @@ class FilesController {
     }
 
     public function download(): void {
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.read');
         try {
             $path = $_GET['path'] ?? '';
             $this->fm->download($path);
@@ -135,6 +144,7 @@ class FilesController {
 
     public function copy(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.write');
         try {
             $input = $this->jsonInput(['path']);
             if ($input === null) return;
@@ -148,6 +158,7 @@ class FilesController {
 
     public function compress(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.write');
         try {
             $input = $this->jsonInput([]);
             if ($input === null) return;
@@ -165,6 +176,7 @@ class FilesController {
 
     public function decompress(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.write');
         try {
             $input = $this->jsonInput(['path']);
             if ($input === null) return;
@@ -178,6 +190,7 @@ class FilesController {
 
     public function chmodPath(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.write');
         try {
             $input = $this->jsonInput(['path', 'mode']);
             if ($input === null) return;
@@ -192,6 +205,7 @@ class FilesController {
 
     public function search(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.read');
         try {
             $path = $_GET['path'] ?? '/';
             $query = $_GET['query'] ?? '';
@@ -208,6 +222,7 @@ class FilesController {
 
     public function createFile(): void {
         header('Content-Type: application/json');
+        Permission::requirePerm(Auth::getCurrentRole(), 'files.write');
         try {
             $input = $this->jsonInput(['path']);
             if ($input === null) return;

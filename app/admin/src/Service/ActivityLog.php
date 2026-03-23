@@ -1,8 +1,14 @@
 <?php
 
 class ActivityLog {
-    private const LOG_FILE = '/data/logs/activity.json';
     private const MAX_ENTRIES = 500;
+
+    /**
+     * Get the log file path.
+     */
+    private static function logFile(): string {
+        return ADMIN_LOGS_DIR . '/activity.json';
+    }
 
     /**
      * Append an activity entry to the JSON log file.
@@ -11,12 +17,13 @@ class ActivityLog {
      * to prevent race conditions when concurrent requests log simultaneously.
      */
     public static function log(string $action, string $detail = ''): void {
-        $dir = dirname(self::LOG_FILE);
+        $file = self::logFile();
+        $dir = dirname($file);
         if (!is_dir($dir)) {
             @mkdir($dir, 0755, true);
         }
 
-        $fh = fopen(self::LOG_FILE, 'c+');
+        $fh = fopen($file, 'c+');
         if ($fh === false) {
             return;
         }
@@ -71,11 +78,12 @@ class ActivityLog {
      * Read all entries from the log file.
      */
     private static function readAll(): array {
-        if (!file_exists(self::LOG_FILE)) {
+        $file = self::logFile();
+        if (!file_exists($file)) {
             return [];
         }
 
-        $json = @file_get_contents(self::LOG_FILE);
+        $json = @file_get_contents($file);
         if ($json === false || $json === '') {
             return [];
         }

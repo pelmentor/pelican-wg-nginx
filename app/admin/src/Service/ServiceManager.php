@@ -21,8 +21,8 @@ class ServiceManager {
     private function controlNginx(string $action): array {
         return match ($action) {
             'reload' => $this->run('nginx -t 2>&1 && nginx -s reload 2>&1'),
-            'test' => $this->run('nginx -c /data/nginx/nginx.conf -t 2>&1'),
-            'restart' => $this->run('nginx -s quit 2>&1; sleep 1; nginx -c /data/nginx/nginx.conf 2>&1'),
+            'test' => $this->run('nginx -c /data/admin/nginx/nginx.conf -t 2>&1'),
+            'restart' => $this->run('nginx -s quit 2>&1; sleep 1; nginx -c /data/admin/nginx/nginx.conf 2>&1'),
             default => ['success' => false, 'output' => "Unknown action: $action"],
         };
     }

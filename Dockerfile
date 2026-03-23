@@ -5,7 +5,7 @@
 # Runs as ROOT with --cap-add=NET_ADMIN.
 #
 # Two web interfaces:
-#   :USER_PORT  (default 7890) — user web content from /data/webroot/
+#   :USER_PORT  (default 7890) — user web content from /data/user/webroot/
 #   :ADMIN_PORT (default 9876) — admin panel + WebSocket console
 #
 # Process model:
@@ -68,9 +68,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # =============================================================================
 # Directory structure
 # =============================================================================
-RUN mkdir -p /data/{webroot,wg,nginx,php,logs,tmp/nginx} \
+RUN mkdir -p /data/user/{webroot,config,logs,tmp/nginx} \
+    /data/admin/{logs,sessions,ratelimit,nginx} \
     && chown -R www-data:www-data /data \
-    && ln -sf /data/logs/nginx-error.log /var/log/nginx/error.log
+    && ln -sf /data/user/logs/nginx-error.log /var/log/nginx/error.log
 
 # Copy Go WebSocket binary from builder stage
 COPY --from=ws-builder /ws-server /usr/local/bin/ws-server
