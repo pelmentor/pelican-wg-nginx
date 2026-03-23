@@ -2,15 +2,64 @@
 # =============================================================================
 # Entrypoint: WG-Nginx standalone container
 # =============================================================================
-# Runs as ROOT — no sudo workarounds, no UID 1000 restrictions.
-# wg-quick works natively with --cap-add=NET_ADMIN.
 #
-# Startup:  WG → PHP-FPM → Nginx → tail logs
-# Shutdown: SIGQUIT to nginx/php-fpm → wg-quick down → exit
+# ENVIRONMENT:
+#   Runs as ROOT with --cap-add=NET_ADMIN.
+#   No Pelican/Wings restrictions — wg-quick works natively.
+#
+# PROCESS MODEL:
+#   tini (PID 1)
+#     └── entrypoint.sh (this script)
+#           ├── wg-quick up wg0 (oneshot — configures kernel interface, exits)
+#           ├── php-fpm8.1 --nodaemonize (background)
+#           ├── nginx (background, master=root, workers=www-data)
+#           └── tail -F logs (background, streams errors to docker logs)
+#
+# USER MODEL:
+#   Nginx master: root (binds ports <1024 if needed)
+#   Nginx workers: www-data (handles HTTP requests)
+#   PHP-FPM: www-data (processes PHP, accesses /data/)
+#   Socket: www-data:www-data 0660 (both sides match = no permission issues)
+#   WireGuard: root (kernel interface management)
+#
+# STARTUP ORDER:
+#   0. Print versions, create dirs, chown /data, rotate logs
+#   1. WireGuard (optional, if WG_PRIVATE_KEY set)
+#   2. Generate nginx/php configs from templates (sed substitution)
+#   3. Start PHP-FPM, wait for socket
+#   4. Start Nginx
+#   5. Print admin password
+#   6. Tail error logs to docker stdout
+#   7. Health loop (check PIDs every 2s)
+#
+# SHUTDOWN (signal flow):
+#   Docker stop → SIGTERM → tini → entrypoint.sh → trap → cleanup()
+#   cleanup():
+#     1. kill tail (stop log streaming)
+#     2. nginx -s quit (SIGQUIT = graceful: finishes in-flight requests)
+#     3. kill -SIGQUIT php-fpm (graceful: finishes active workers)
+#     4. wait for php-fpm to exit
+#     5. wg-quick down wg0 (removes interface, cleans routes)
+#     6. exit 0
+#
+# WHY SIGQUIT (not SIGTERM):
+#   Both nginx and php-fpm treat SIGQUIT as graceful shutdown —
+#   they finish serving current requests before exiting.
+#   SIGTERM would kill them immediately, dropping connections.
+#   This matches the official Docker images (STOPSIGNAL SIGQUIT).
+#
+# WHY "|| true" after every kill/wait:
+#   The process might already be dead (crashed, or never started).
+#   Without "|| true", set -e would exit the script on error,
+#   preventing cleanup of remaining services.
 # =============================================================================
 
+# -e: exit on error  -u: error on unset vars  -o pipefail: fail on pipe errors
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# Logging helpers — colored output visible in docker logs and admin console
+# ---------------------------------------------------------------------------
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
@@ -18,45 +67,65 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 log_step()  { echo -e "${CYAN}[STEP]${NC} $*"; }
 
 # ---------------------------------------------------------------------------
-# Paths
+# Paths — all persistent data under /data (mounted from host)
+# /app is read-only (baked into image, contains admin panel + templates)
 # ---------------------------------------------------------------------------
 DATA="/data"
 
 # ---------------------------------------------------------------------------
-# Cleanup handler
+# Signal trap — registered BEFORE any services start.
+#
+# trap catches SIGTERM (from docker stop) and SIGINT (from Ctrl+C).
+# When either arrives, bash interrupts the current command (the sleep
+# in the health loop) and jumps to cleanup().
+#
+# tini (PID 1) also forwards signals to the entire process group
+# via its -g flag, so even if the trap doesn't fire, children
+# receive the signal directly.
 # ---------------------------------------------------------------------------
 cleanup() {
     log_info "Shutting down..."
-    kill "$TAIL_PID" 2>/dev/null || true
-    nginx -s quit 2>/dev/null || true
-    kill -SIGQUIT "$PHP_FPM_PID" 2>/dev/null || true
-    wait "$PHP_FPM_PID" 2>/dev/null || true
-    wg-quick down wg0 2>/dev/null || true
+    kill "$TAIL_PID" 2>/dev/null || true            # Stop log streaming
+    nginx -s quit 2>/dev/null || true                # Graceful nginx stop (SIGQUIT)
+    kill -SIGQUIT "$PHP_FPM_PID" 2>/dev/null || true # Graceful PHP-FPM stop
+    wait "$PHP_FPM_PID" 2>/dev/null || true          # Wait for PHP-FPM to finish
+    wg-quick down wg0 2>/dev/null || true            # Tear down WG interface
     log_info "Shutdown complete."
     exit 0
 }
 trap cleanup SIGTERM SIGINT
 
 # ===========================================================================
-# STEP 0: Prepare
+# STEP 0: Prepare environment
 # ===========================================================================
 log_step "Preparing environment..."
+
+# Show versions so user knows exactly what's inside the image
 log_info "Stack: Ubuntu $(cat /etc/lsb-release 2>/dev/null | grep RELEASE | cut -d= -f2), Nginx $(nginx -v 2>&1 | cut -d/ -f2), PHP $(php -r 'echo PHP_VERSION;'), WG $(wg --version 2>/dev/null | head -1)"
 log_info "PHP extensions: $(php -m 2>/dev/null | grep -E '^(curl|gd|mbstring|zip|json|xml)$' | tr '\n' ' ')"
 
-# Ensure persistent dirs exist
+# Create persistent directory structure.
+# These dirs live on the host volume — they survive container restarts.
 mkdir -p "${DATA}"/{webroot,wg,nginx,php,logs,tmp/nginx}
 
-# Nginx workers and PHP-FPM both run as www-data.
-# /data must be writable by www-data for logs, uploads, configs, socket.
+# Both nginx workers and PHP-FPM run as www-data.
+# /data must be writable by www-data for: logs, uploads, configs, socket, PID.
+# This runs on every start because host-mounted volumes may have root ownership.
 chown -R www-data:www-data "${DATA}"
 
-# Default page if webroot is empty
+# Provide a default index page if webroot is empty (first run)
 if [ ! -f "${DATA}/webroot/index.html" ] && [ -z "$(ls -A "${DATA}/webroot/" 2>/dev/null)" ]; then
     cp /app/default-index.html "${DATA}/webroot/index.html"
 fi
 
-# Log rotation (>10MB → keep last 1000 lines)
+# ---------------------------------------------------------------------------
+# Log rotation — simple startup-time check.
+# Why not logrotate: minimal image, no cron, one-time check is enough.
+# Why 10MB threshold: prevents disk fill on long-running containers.
+# Why keep 1000 lines: preserves recent context for debugging.
+# For runtime log limits, Docker's own log driver handles it
+# (see Wings config: docker.log_config.max-size).
+# ---------------------------------------------------------------------------
 for logfile in "${DATA}/logs/"*.log; do
     if [ -f "$logfile" ] && [ "$(stat -c%s "$logfile" 2>/dev/null || echo 0)" -gt 10485760 ]; then
         log_warn "Rotating $logfile (>10MB)"
@@ -65,7 +134,7 @@ for logfile in "${DATA}/logs/"*.log; do
 done
 
 # ===========================================================================
-# STEP 1: WireGuard
+# STEP 1: WireGuard (optional)
 # ===========================================================================
 log_step "Configuring WireGuard..."
 
@@ -73,9 +142,14 @@ WG_ENABLED=false
 if [ -z "${WG_PRIVATE_KEY:-}" ]; then
     log_warn "WG_PRIVATE_KEY not set — WireGuard disabled"
 else
+    # wg-quick reads from /etc/wireguard/wg0.conf by convention.
+    # We generate it from environment variables on every start —
+    # env vars are the source of truth, not the file.
     WG_CONF="/etc/wireguard/wg0.conf"
     mkdir -p /etc/wireguard
 
+    # Optional fields — only include in config if env var is set.
+    # Empty lines in WG config are ignored, so blank vars are safe.
     WG_LISTEN_PORT_LINE=""
     [ -n "${WG_LISTEN_PORT:-}" ] && WG_LISTEN_PORT_LINE="ListenPort = ${WG_LISTEN_PORT}"
     WG_ENDPOINT_LINE=""
@@ -96,12 +170,14 @@ ${WG_ENDPOINT_LINE}
 AllowedIPs = ${WG_PEER_ALLOWED_IPS:-10.0.0.0/24}
 PersistentKeepalive = 25
 EOF
+    # Protect config — contains private key
     chmod 600 "$WG_CONF"
 
-    # Copy to persistent storage for visibility in admin panel
+    # Copy to /data so it's visible in admin panel file manager
     cp "$WG_CONF" "${DATA}/wg/wg0.conf"
 
     log_info "Starting WireGuard..."
+    # tee: output goes to both console (docker logs) and persistent log file
     if wg-quick up wg0 2>&1 | tee -a "${DATA}/logs/wireguard.log"; then
         WG_ENABLED=true
         log_info "WireGuard is up:"
@@ -113,30 +189,35 @@ EOF
 fi
 
 # ===========================================================================
-# STEP 2: Nginx + PHP-FPM configs
+# STEP 2: Generate Nginx + PHP-FPM configs from templates
+# ===========================================================================
+# Templates live at /app/ (baked into image, read-only).
+# Generated configs go to /data/ (persistent, editable via admin panel).
+# sed replaces {{PLACEHOLDERS}} with actual values from env vars.
 # ===========================================================================
 log_step "Configuring Nginx and PHP-FPM..."
 
 USER_PORT="${USER_PORT:-7890}"
 ADMIN_PORT="${ADMIN_PORT:-9876}"
 
-# Generate user nginx config from template
 sed -e "s/{{USER_PORT}}/${USER_PORT}/g" \
     /app/nginx/user.conf.template > "${DATA}/nginx/user.conf"
 
-# Generate admin nginx config with correct port
 sed -e "s/{{ADMIN_PORT}}/${ADMIN_PORT}/g" \
     /app/nginx/admin.conf.template > "${DATA}/nginx/admin.conf"
 
-# Generate master nginx.conf
 sed -e "s|{{DATA}}|${DATA}|g" \
     /app/nginx/nginx.conf.template > "${DATA}/nginx/nginx.conf"
 
-# Generate php-fpm config
 sed -e "s|{{DATA}}|${DATA}|g" \
     /app/php/php-fpm.conf.template > "${DATA}/php/php-fpm.conf"
 
-# Admin password
+# ---------------------------------------------------------------------------
+# Admin password — auto-generated on first run if not provided via env var.
+# Stored in /data/.admin_password (persists across restarts).
+# Hidden from file manager (FileManager.php skips .admin_password).
+# Printed in startup output so user can find it in docker logs.
+# ---------------------------------------------------------------------------
 if [ -z "${ADMIN_PASSWORD:-}" ]; then
     if [ ! -f "${DATA}/.admin_password" ]; then
         ADMIN_PASSWORD=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 16)
@@ -154,25 +235,38 @@ export ADMIN_PASSWORD
 log_step "Starting PHP-FPM..."
 
 PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+# --nodaemonize: stay in foreground so we can track the PID.
+# & at the end: run in background so this script continues.
 "/usr/sbin/php-fpm${PHP_VERSION}" \
     --fpm-config "${DATA}/php/php-fpm.conf" \
     --nodaemonize &
 PHP_FPM_PID=$!
 
+# Wait for the unix socket to appear (PHP-FPM needs ~1s to create it).
+# Without the socket, nginx can't proxy PHP requests → 502 Bad Gateway.
 for i in $(seq 1 10); do [ -S "${DATA}/tmp/php-fpm.sock" ] && break; sleep 0.5; done
-log_info "PHP-FPM started (PID: $PHP_FPM_PID)"
+
+if [ -S "${DATA}/tmp/php-fpm.sock" ]; then
+    log_info "PHP-FPM started (PID: $PHP_FPM_PID)"
+else
+    log_error "PHP-FPM socket not created after 5s! Check php-fpm.conf"
+fi
 
 # ===========================================================================
 # STEP 4: Start Nginx
 # ===========================================================================
 log_step "Starting Nginx..."
 
+# Nginx reads the generated config from /data/nginx/nginx.conf which
+# includes both server blocks (user content + admin panel).
+# "daemon off" is set in the config, so nginx stays in foreground.
+# & runs it in background so this script can continue to the health loop.
 nginx -c "${DATA}/nginx/nginx.conf" &
 NGINX_PID=$!
 log_info "Nginx started (PID: $NGINX_PID)"
 
 # ===========================================================================
-# Ready
+# Ready — print connection info
 # ===========================================================================
 echo ""
 log_info "============================================"
@@ -187,13 +281,31 @@ log_info "============================================"
 echo ""
 
 # ===========================================================================
-# Tail error logs + wait
+# STEP 5: Tail error logs to docker stdout
 # ===========================================================================
-touch "${DATA}/logs/nginx-error.log" "${DATA}/logs/php-fpm-error.log"
+# tail -F follows files even if they're recreated (log rotation).
+# Only error logs — access log would flood docker logs.
+# touch ensures files exist before tail starts.
+# ===========================================================================
+touch "${DATA}/logs/nginx-error.log" "${DATA}/logs/php-fpm-error.log" "${DATA}/logs/admin-error.log"
 tail -F "${DATA}/logs/nginx-error.log" "${DATA}/logs/php-fpm-error.log" "${DATA}/logs/admin-error.log" 2>/dev/null &
 TAIL_PID=$!
 
-# Wait for services
+# ===========================================================================
+# STEP 6: Health loop — monitor service PIDs
+# ===========================================================================
+# Check every 2 seconds if nginx and php-fpm are still alive.
+# If either exits, break out of the loop and run cleanup.
+#
+# Why not "wait -n":
+#   wait -n waits for any child to exit, but it also catches the tail
+#   process. The PID-check loop lets us monitor specific processes.
+#
+# Why the container exits on crash:
+#   In a single-container model, partial recovery is risky (e.g. nginx
+#   up but php-fpm down = 502 errors). A full restart via Docker's
+#   restart policy (--restart unless-stopped) gives a clean state.
+# ===========================================================================
 while true; do
     if ! kill -0 "$NGINX_PID" 2>/dev/null; then
         log_error "Nginx exited unexpectedly!"
