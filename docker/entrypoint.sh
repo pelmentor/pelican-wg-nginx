@@ -6,20 +6,23 @@
 # /var/log) are read-only. ALL runtime files go to /home/container/ which
 # is a persistent volume mounted by Wings.
 #
-# Порядок запуска:
-# 1. Zombie cleanup (ref: linuxserver/nginx)
-# 2. sysctl для WG client mode (ref: linuxserver/wireguard)
-# 3. Генерация wg0.conf из переменных окружения Pelican
-# 4. Поднятие WireGuard интерфейса
-# 5. Подстановка порта/сокета в конфиги
-# 6. Запуск PHP-FPM (фоном)
-# 7. Запуск Nginx (фоном)
-# 8. wait -n — если любой процесс упал, контейнер завершается
+# Startup order:
+# 1. Show versions and PHP extensions
+# 2. Zombie cleanup (ref: linuxserver/nginx)
+# 3. Log rotation (truncate logs >10MB)
+# 4. sysctl for WG client mode (ref: linuxserver/wireguard)
+# 5. Generate wg0.conf from Pelican env vars
+# 6. Bring up WireGuard interface
+# 7. Substitute port/socket in nginx and php-fpm configs
+# 8. Start PHP-FPM (background)
+# 9. Start Nginx (background)
+# 10. Tail error logs to Pelican console
+# 11. wait -n — if any process exits, container exits
 #
 # Graceful shutdown:
-# - Tini (PID 1) ловит SIGTERM/SIGINT от Pelican (egg stop: "^^C")
-# - Trap отправляет SIGQUIT (graceful) nginx и php-fpm
-# - WG-интерфейс убирается через wg-quick down
+# - Tini (PID 1) catches SIGTERM/SIGINT from Pelican (egg stop: "^^C")
+# - Trap sends SIGQUIT (graceful) to nginx and php-fpm
+# - WG interface torn down via wg-quick down
 # =============================================================================
 
 set -euo pipefail
@@ -50,11 +53,12 @@ NGINX_TEMP="${HC}/tmp/nginx"
 
 # ---------------------------------------------------------------------------
 # Graceful shutdown
-# Ref: official nginx/php-fpm — SIGQUIT = graceful (дожидается in-flight)
-# Ref: linuxserver/wireguard — wg-quick down в обратном порядке
+# Ref: official nginx/php-fpm — SIGQUIT = graceful (waits for in-flight requests)
+# Ref: linuxserver/wireguard — wg-quick down in reverse order
 # ---------------------------------------------------------------------------
 cleanup() {
     log_info "Shutting down..."
+    kill "$TAIL_PID" 2>/dev/null || true
     kill -SIGQUIT "$NGINX_PID" 2>/dev/null || true
     kill -SIGQUIT "$PHP_FPM_PID" 2>/dev/null || true
     wait "$NGINX_PID" 2>/dev/null || true
@@ -89,6 +93,22 @@ mkdir -p "${NGINX_TEMP}"
 
 # Clean stale socket/pid from previous run
 rm -f "$PHP_FPM_SOCK" "$NGINX_PID_FILE"
+
+# ---------------------------------------------------------------------------
+# Log rotation — truncate logs over 10MB to prevent disk fill.
+# No logrotate available in this minimal image, so we do it simply:
+# if a log file exceeds 10MB, keep only the last 1000 lines.
+# This runs once at startup — for long-running containers, logs are
+# also bounded by Pelican's own Docker log limits (see Wings config).
+# ---------------------------------------------------------------------------
+LOG_MAX_BYTES=10485760  # 10MB
+for logfile in "${HC}/logs/"*.log; do
+    if [ -f "$logfile" ] && [ "$(stat -c%s "$logfile" 2>/dev/null || echo 0)" -gt "$LOG_MAX_BYTES" ]; then
+        log_warn "Rotating $logfile (exceeded 10MB)"
+        tail -n 1000 "$logfile" > "${logfile}.tmp"
+        mv "${logfile}.tmp" "$logfile"
+    fi
+done
 
 # Default page if webroot is empty
 if [ ! -f "${HC}/webroot/index.html" ] && [ -z "$(ls -A "${HC}/webroot/" 2>/dev/null)" ]; then
@@ -155,14 +175,17 @@ PersistentKeepalive = 25
 EOF
     chmod 600 "$WG_CONF"
 
+    WG_LOG="${HC}/logs/wireguard.log"
+
     log_info "Starting WireGuard..."
-    # Pass full path — wg-quick accepts config file path directly
-    if wg-quick up "$WG_CONF" 2>&1; then
+    # Log wg-quick output to both console and file for debugging
+    if wg-quick up "$WG_CONF" 2>&1 | tee -a "$WG_LOG"; then
         WG_ENABLED=true
         log_info "WireGuard is up:"
-        wg show wg0 | sed 's/^/  /'
+        wg show wg0 2>&1 | tee -a "$WG_LOG" | sed 's/^/  /'
     else
         log_error "WireGuard failed to start! Check your keys and endpoint."
+        log_error "See ${WG_LOG} for details."
         log_error "Container will continue without VPN."
     fi
 fi
@@ -249,6 +272,15 @@ if [ "$WG_ENABLED" = true ]; then
 fi
 log_info "============================================"
 echo ""
+
+# ===========================================================================
+# Tail error logs to Pelican console.
+# Only error logs — access log is too noisy for the console.
+# Users can view access logs via File Manager at logs/nginx-access.log.
+# ===========================================================================
+touch "${HC}/logs/nginx-error.log" "${HC}/logs/php-fpm-error.log"
+tail -F "${HC}/logs/nginx-error.log" "${HC}/logs/php-fpm-error.log" 2>/dev/null &
+TAIL_PID=$!
 
 # ===========================================================================
 # Wait for any process to exit. If one crashes, exit entirely.
