@@ -222,7 +222,9 @@ if [ -z "${ADMIN_PASSWORD:-}" ]; then
     if [ ! -f "${DATA}/.admin_password" ]; then
         ADMIN_PASSWORD=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 16)
         echo "$ADMIN_PASSWORD" > "${DATA}/.admin_password"
-        chmod 600 "${DATA}/.admin_password"
+        # Readable by www-data (PHP-FPM) for auth fallback if env var not available
+        chown www-data:www-data "${DATA}/.admin_password"
+        chmod 640 "${DATA}/.admin_password"
     else
         ADMIN_PASSWORD=$(cat "${DATA}/.admin_password")
     fi
