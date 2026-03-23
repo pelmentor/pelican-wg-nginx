@@ -2,9 +2,9 @@
 # =============================================================================
 # Entrypoint для контейнера WireGuard + Nginx + PHP-FPM
 # =============================================================================
-# Запускается от root (нужно для WireGuard).
-# Nginx worker'ы работают от user container (директива в nginx.conf).
-# PHP-FPM worker'ы работают от user container (директива в php-fpm.conf).
+# Pelican runs containers as UID 1000 (non-root). System dirs (/etc, /run,
+# /var/log) are read-only. ALL runtime files go to /home/container/ which
+# is a persistent volume mounted by Wings.
 #
 # Порядок запуска:
 # 1. Zombie cleanup (ref: linuxserver/nginx)
@@ -25,7 +25,7 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Логирование
+# Logging
 # ---------------------------------------------------------------------------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,6 +39,16 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 log_step()  { echo -e "${CYAN}[STEP]${NC} $*"; }
 
 # ---------------------------------------------------------------------------
+# Paths — all under /home/container/ (persistent Pelican volume)
+# No /tmp, /run, /etc — they are ephemeral or read-only in Pelican.
+# ---------------------------------------------------------------------------
+HC="/home/container"
+WG_CONF="${HC}/wg/wg0.conf"
+PHP_FPM_SOCK="${HC}/tmp/php-fpm.sock"
+NGINX_PID_FILE="${HC}/tmp/nginx.pid"
+NGINX_TEMP="${HC}/tmp/nginx"
+
+# ---------------------------------------------------------------------------
 # Graceful shutdown
 # Ref: official nginx/php-fpm — SIGQUIT = graceful (дожидается in-flight)
 # Ref: linuxserver/wireguard — wg-quick down в обратном порядке
@@ -49,19 +59,18 @@ cleanup() {
     kill -SIGQUIT "$PHP_FPM_PID" 2>/dev/null || true
     wait "$NGINX_PID" 2>/dev/null || true
     wait "$PHP_FPM_PID" 2>/dev/null || true
-    wg-quick down /tmp/wireguard/wg0.conf 2>/dev/null || true
+    wg-quick down "$WG_CONF" 2>/dev/null || true
     log_info "Shutdown complete."
     exit 0
 }
 trap cleanup SIGTERM SIGINT
 
 # ===========================================================================
-# STEP 0: Проверки и подготовка
+# STEP 0: Prepare directories
 # ===========================================================================
 log_step "Preparing environment..."
 
-# Ref: linuxserver/nginx — zombie cleanup перед стартом.
-# Если контейнер был некорректно перезапущен, могут остаться stale процессы.
+# Ref: linuxserver/nginx — zombie cleanup before start
 for proc in nginx php-fpm; do
     if pgrep -x "$proc" >/dev/null 2>&1; then
         log_warn "Stale $proc processes found, killing..."
@@ -70,29 +79,25 @@ for proc in nginx php-fpm; do
     fi
 done
 
-# Убедимся что все нужные директории существуют и права корректны.
-# Installation script создаёт их в /mnt/server, но при первом запуске
-# Docker image может стартануть без install phase (если образ уже содержит всё).
-mkdir -p /home/container/{webroot,wg,nginx,php,logs,tmp}
-# /run is read-only in Pelican containers (by design).
-# PID files and unix sockets are ephemeral — /tmp is the correct location.
-# Ref: trafex/docker-php-nginx uses the same approach.
-mkdir -p /tmp/nginx /tmp/php /tmp/run-nginx
-chown -R container:container /home/container /tmp/nginx /tmp/php /tmp/run-nginx
+# All runtime dirs under /home/container/ — persistent and visible in File Manager
+mkdir -p "${HC}"/{webroot,wg,nginx,php,logs,tmp}
+mkdir -p "${NGINX_TEMP}"
 
-# Дефолтная страница если webroot пуст
-if [ ! -f /home/container/webroot/index.html ] && [ -z "$(ls -A /home/container/webroot/ 2>/dev/null)" ]; then
-    cat > /home/container/webroot/index.html <<'DEFAULTPAGE'
+# Clean stale socket/pid from previous run
+rm -f "$PHP_FPM_SOCK" "$NGINX_PID_FILE"
+
+# Default page if webroot is empty
+if [ ! -f "${HC}/webroot/index.html" ] && [ -z "$(ls -A "${HC}/webroot/" 2>/dev/null)" ]; then
+    cat > "${HC}/webroot/index.html" <<'DEFAULTPAGE'
 <!DOCTYPE html>
 <html>
-<head><title>Map Server</title></head>
+<head><title>Web Server</title></head>
 <body>
-<h1>Map server is running!</h1>
-<p>Upload your map files to the <code>webroot/</code> directory via Pelican File Manager.</p>
+<h1>Web server is running!</h1>
+<p>Upload your files to the <code>webroot/</code> directory via Pelican File Manager.</p>
 </body>
 </html>
 DEFAULTPAGE
-    chown container:container /home/container/webroot/index.html
 fi
 
 # ===========================================================================
@@ -100,8 +105,7 @@ fi
 # ===========================================================================
 log_step "Configuring WireGuard..."
 
-# Ref: linuxserver/wireguard — sysctl для WG client mode.
-# Без этого reverse path filtering может дропать ответные пакеты.
+# Ref: linuxserver/wireguard — sysctl for WG client mode
 sysctl -w net.ipv4.conf.all.src_valid_mark=1 2>/dev/null || \
     log_warn "Cannot set sysctl src_valid_mark (not critical if WG is server-mode)"
 
@@ -111,19 +115,13 @@ if [ -z "${WG_PRIVATE_KEY:-}" ]; then
     log_warn "WG_PRIVATE_KEY not set — WireGuard disabled"
     log_warn "Set WireGuard variables in Pelican Panel to enable VPN"
 else
-    # /etc/wireguard is read-only in Pelican containers (non-root).
-    # Use /tmp which is always writable, then tell wg-quick the path.
-    WG_CONF="/tmp/wireguard/wg0.conf"
-    mkdir -p /tmp/wireguard
-
-    # ListenPort — опционален. Без него WG работает как чистый клиент
-    # (инициирует подключение, но не принимает входящие).
+    # ListenPort — optional. Without it WG works as pure client.
     WG_LISTEN_PORT_LINE=""
     if [ -n "${WG_LISTEN_PORT:-}" ]; then
         WG_LISTEN_PORT_LINE="ListenPort = ${WG_LISTEN_PORT}"
     fi
 
-    # Endpoint — опционален. Если пир подключается к нам — endpoint не нужен.
+    # Endpoint — optional. Not needed if the peer connects to us.
     WG_ENDPOINT_LINE=""
     if [ -n "${WG_PEER_ENDPOINT:-}" ]; then
         WG_ENDPOINT_LINE="Endpoint = ${WG_PEER_ENDPOINT}"
@@ -159,16 +157,13 @@ EOF
 fi
 
 # ===========================================================================
-# STEP 2: Конфиги Nginx и PHP-FPM
+# STEP 2: Configure Nginx and PHP-FPM
 # ===========================================================================
 log_step "Configuring Nginx and PHP-FPM..."
 
 # Pelican provides the primary allocation port via SERVER_PORT.
-# Some versions use P_SERVER_PORT or the port is in the allocation.
-# Log all port-related env vars for debugging.
-log_info "Port env: SERVER_PORT=${SERVER_PORT:-<unset>}, P_SERVER_PORT=${P_SERVER_PORT:-<unset>}, SERVER_IP=${SERVER_IP:-<unset>}"
+log_info "Port env: SERVER_PORT=${SERVER_PORT:-<unset>}, P_SERVER_PORT=${P_SERVER_PORT:-<unset>}"
 
-# Resolve the actual port — try multiple Pelican env var names
 SERVER_PORT="${SERVER_PORT:-${P_SERVER_PORT:-7890}}"
 
 # If Pelican passed 0 (no allocation), fall back to 7890
@@ -177,41 +172,38 @@ if [ "$SERVER_PORT" = "0" ] || [ -z "$SERVER_PORT" ]; then
     SERVER_PORT=7890
 fi
 
-# Определяем версию PHP автоматически (8.1 на Ubuntu 22.04)
+# Detect PHP-FPM binary version (8.1 on Ubuntu 22.04)
 PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
 PHP_FPM_BIN="/usr/sbin/php-fpm${PHP_VERSION}"
-PHP_FPM_SOCK="/tmp/php/php-fpm.sock"
 
-# Копируем дефолтные конфиги если пользователь их удалил через File Manager
-if [ ! -f /home/container/nginx/nginx.conf ]; then
+# Restore default configs if user deleted them via File Manager
+if [ ! -f "${HC}/nginx/nginx.conf" ]; then
     log_warn "nginx.conf missing — restoring default"
-    cp /defaults/nginx.conf /home/container/nginx/nginx.conf
-    chown container:container /home/container/nginx/nginx.conf
+    cp /defaults/nginx.conf "${HC}/nginx/nginx.conf"
 fi
-if [ ! -f /home/container/php/php-fpm.conf ]; then
+if [ ! -f "${HC}/php/php-fpm.conf" ]; then
     log_warn "php-fpm.conf missing — restoring default"
-    cp /defaults/php-fpm.conf /home/container/php/php-fpm.conf
-    chown container:container /home/container/php/php-fpm.conf
+    cp /defaults/php-fpm.conf "${HC}/php/php-fpm.conf"
 fi
 
-# Подстановка плейсхолдеров. sed заменяет ТОЛЬКО {{...}} маркеры.
-# Если пользователь вручную поменял порт в конфиге — sed не тронет его
-# (плейсхолдер уже заменён на число с прошлого запуска).
-sed -i "s/{{SERVER_PORT}}/${SERVER_PORT}/g" /home/container/nginx/nginx.conf
-sed -i "s|{{PHP_FPM_SOCK}}|${PHP_FPM_SOCK}|g" /home/container/nginx/nginx.conf
-sed -i "s|{{PHP_FPM_SOCK}}|${PHP_FPM_SOCK}|g" /home/container/php/php-fpm.conf
+# Substitute placeholders in configs
+sed -i "s/{{SERVER_PORT}}/${SERVER_PORT}/g" "${HC}/nginx/nginx.conf"
+sed -i "s|{{PHP_FPM_SOCK}}|${PHP_FPM_SOCK}|g" "${HC}/nginx/nginx.conf"
+sed -i "s|{{PHP_FPM_SOCK}}|${PHP_FPM_SOCK}|g" "${HC}/php/php-fpm.conf"
+sed -i "s|{{NGINX_PID_FILE}}|${NGINX_PID_FILE}|g" "${HC}/nginx/nginx.conf"
+sed -i "s|{{NGINX_TEMP}}|${NGINX_TEMP}|g" "${HC}/nginx/nginx.conf"
 
 # ===========================================================================
-# STEP 3: Запуск PHP-FPM
+# STEP 3: Start PHP-FPM
 # ===========================================================================
 log_step "Starting PHP-FPM ${PHP_VERSION}..."
 
 "$PHP_FPM_BIN" \
-    --fpm-config /home/container/php/php-fpm.conf \
+    --fpm-config "${HC}/php/php-fpm.conf" \
     --nodaemonize &
 PHP_FPM_PID=$!
 
-# Ждём создания сокета (php-fpm нужно ~1с)
+# Wait for socket creation (~1s)
 for i in $(seq 1 10); do
     [ -S "$PHP_FPM_SOCK" ] && break
     sleep 0.5
@@ -224,18 +216,18 @@ else
 fi
 
 # ===========================================================================
-# STEP 4: Запуск Nginx
+# STEP 4: Start Nginx
 # ===========================================================================
 log_step "Starting Nginx on port ${SERVER_PORT}..."
 
-nginx -c /home/container/nginx/nginx.conf &
+nginx -c "${HC}/nginx/nginx.conf" &
 NGINX_PID=$!
 log_info "Nginx started (PID: $NGINX_PID)"
 
 # ===========================================================================
 # Ready!
-# Эта строка ОБЯЗАТЕЛЬНА — Pelican ищет её в stdout чтобы пометить
-# сервер как "Running" (см. egg config.startup.done).
+# This line is REQUIRED — Pelican watches stdout for it to mark
+# the server as "Running" (see egg config.startup.done).
 # ===========================================================================
 echo ""
 log_info "============================================"
@@ -248,8 +240,8 @@ log_info "============================================"
 echo ""
 
 # ===========================================================================
-# Ожидание. Если ЛЮБОЙ процесс упадёт — выходим.
-# Pelican увидит завершение контейнера и может перезапустить его.
+# Wait for any process to exit. If one crashes, exit entirely.
+# Pelican will see the container exit and can restart it.
 # ===========================================================================
 wait -n "$PHP_FPM_PID" "$NGINX_PID" 2>/dev/null || true
 log_error "A service has exited unexpectedly!"

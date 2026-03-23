@@ -1,10 +1,14 @@
 # =============================================================================
 # Pelican Egg: WireGuard + Nginx + PHP-FPM
 # =============================================================================
-# Базовый образ — Ubuntu 22.04 (LTS). Выбран потому что:
-# 1. Стабильная база с долгой поддержкой
-# 2. Полноценный пакетный менеджер (в отличие от Alpine, где WG имеет нюансы)
-# 3. Совместимость с Pelican/Pterodactyl (большинство egg на Debian/Ubuntu)
+# Base: Ubuntu 22.04 LTS
+# - Stable, long-term support
+# - Full package manager (unlike Alpine where WG has quirks)
+# - Compatible with Pelican/Pterodactyl ecosystem
+#
+# IMPORTANT: Pelican runs containers as UID 1000 (non-root).
+# System dirs (/etc, /run, /var/log) are read-only.
+# ALL runtime files go to /home/container/ (persistent volume).
 # =============================================================================
 
 FROM ubuntu:22.04
@@ -15,7 +19,7 @@ LABEL description="WireGuard VPN client + Nginx + PHP-FPM for Pelican Panel"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # =============================================================================
-# Установка пакетов — один RUN-слой для минимизации размера.
+# Packages — single RUN layer to minimize image size
 # =============================================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # WireGuard
@@ -31,7 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     php-curl \
     php-gd \
     php-zip \
-    # Утилиты
+    # Utilities
     curl \
     ca-certificates \
     procps \
@@ -40,38 +44,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # =============================================================================
-# Пользователь container (UID 1000) — стандарт Pelican/Pterodactyl.
+# User container (UID 1000) — Pelican/Pterodactyl standard.
 # Ref: pterodactyl.io/community/config/eggs/creating_a_custom_image.html
-# "All containers must have a user named container with home /home/container"
 # =============================================================================
 RUN useradd -m -d /home/container -s /bin/bash -u 1000 container
 
 # =============================================================================
-# Директории.
-# /defaults/ — бэкап конфигов, entrypoint копирует их если пользователь удалил
-# Ref: linuxserver — паттерн /defaults/ для восстановления конфигов
+# Directories — ALL under /home/container/ (persistent Pelican volume).
+# /defaults/ — config backups, entrypoint restores them if user deletes.
+# Ref: linuxserver — /defaults/ pattern for config recovery.
+#
+# /home/container/tmp/ — runtime files (PID, sockets, nginx temp).
+# We do NOT use /tmp or /run — they are ephemeral/read-only in Pelican.
 # =============================================================================
-# Why /tmp/ instead of /run/:
-# Pelican Wings mounts /run as read-only inside containers (by design).
-# PID files and unix sockets are ephemeral runtime data — /tmp is the
-# correct writable location in this environment.
-# Ref: trafex/docker-php-nginx uses the same /tmp approach.
-# /var/log/nginx must be writable — nginx writes to it before reading config
 RUN mkdir -p \
-    /home/container/{webroot,wg,nginx,php,logs,tmp} \
+    /home/container/{webroot,wg,nginx,php,logs,tmp/nginx} \
     /defaults \
     /var/lib/nginx/{body,proxy,fastcgi} \
-    /tmp/nginx /tmp/php /tmp/run-nginx \
-    && chown -R container:container \
-    /home/container /var/lib/nginx /var/log/nginx \
-    /tmp/nginx /tmp/php /tmp/run-nginx \
-    && chmod 777 /var/log/nginx \
-    # Redirect default nginx error log to our writable location.
-    # Nginx writes to /var/log/nginx/error.log BEFORE reading config,
-    # so we symlink it to prevent the startup "Permission denied" alert.
+    && chown -R container:container /home/container /var/lib/nginx \
+    # Symlink nginx startup log to our writable location.
+    # Nginx writes to /var/log/nginx/error.log BEFORE reading config.
     && ln -sf /home/container/logs/nginx-error.log /var/log/nginx/error.log
 
-# Конфиги: копируем И в /home/container (рабочие), И в /defaults (бэкап)
+# Configs: copy to both /home/container (working) and /defaults (backup)
 COPY nginx.conf /defaults/nginx.conf
 COPY php-fpm.conf /defaults/php-fpm.conf
 COPY --chown=container:container nginx.conf /home/container/nginx/nginx.conf
@@ -83,16 +78,15 @@ COPY --chmod=755 entrypoint.sh /entrypoint.sh
 WORKDIR /home/container
 
 # =============================================================================
-# Health check: проверяет цепочку nginx → php-fpm → socket.
-# Ref: trafex/docker-php-nginx — fpm-ping лучший паттерн.
+# Health check: validates full chain nginx → socket → php-fpm.
+# Ref: trafex/docker-php-nginx — fpm-ping is the best pattern.
 # =============================================================================
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl --silent --fail http://127.0.0.1:${SERVER_PORT:-7890}/fpm-ping || exit 1
 
 # =============================================================================
-# Tini как PID 1.
-# Ref: RESEARCH.md §2.4 — tini vs s6-overlay vs supervisord.
-# -g = пробрасывает сигнал всей process group.
+# Tini as PID 1. Ref: RESEARCH.md §2.4
+# -g = forward signals to entire process group.
 # =============================================================================
 ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
 CMD ["/entrypoint.sh"]
