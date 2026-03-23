@@ -1,5 +1,5 @@
 # =============================================================================
-# WG-Nginx: WireGuard + Nginx + PHP-FPM + Admin Panel
+# WG-Nginx: WireGuard + Nginx + PHP 8.1 FPM + Admin Panel
 # =============================================================================
 # Standalone Docker image for Unraid (or any Docker host).
 # Runs as ROOT with --cap-add=NET_ADMIN — no Pelican/Wings restrictions.
